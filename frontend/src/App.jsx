@@ -11,6 +11,8 @@ import { getConfig, getEntities } from "./services/api";
 import { useIsAuthenticated } from "@azure/msal-react";
 import { useAuth } from "./context/AuthContext";
 import Login from "./components/Auth/Login";
+console.log("TENANT:", process.env.REACT_APP_MS_TENANT_ID);
+console.log("CLIENT:", process.env.REACT_APP_MS_CLIENT_ID);
 
 const NAV = [
   {
