@@ -9,8 +9,9 @@ import { AuthProvider } from "./context/AuthContext";
  
 const msalInstance = new PublicClientApplication(msalConfig);
 msalInstance.initialize().then(() => {
-  // Handle redirect response before rendering
-  msalInstance.handleRedirectPromise().then(() => {
+  msalInstance.handleRedirectPromise().catch(err => {
+    console.warn("Redirect promise error (ignored):", err);
+  }).finally(() => {
     const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(
       
