@@ -1,6 +1,8 @@
-import axios from "axios";
+import API from "../services/api"
 
-const API = axios.create({ baseURL: process.env.REACT_APP_API_URL || "" });
+//const API = axios.create({ baseURL: process.env.REACT_APP_API_URL || "" });
+
+const API = API.get("/api/auth/me", { params: { user_id: accounts[0].username } })
 
 export const getPnl         = (entity, from, to)       => API.get("/api/pnl",                     { params: { entity, from_date: from, to_date: to } });
 export const getBs          = (entity, from, to)       => API.get("/api/bs",                      { params: { entity, from_date: from, to_date: to } });
