@@ -103,7 +103,7 @@ export default function BS({ entity = "QM", setEntity, entities = [] }){
         <div className="card">
           <div className="card-hdr">
             <div className="card-title">Balance Sheet — Detail</div>
-            <div className="card-sub" style={{marginLeft:"auto"}}>QM · {mp.fromLabel}–{mp.toLabel}</div>
+            <div className="card-sub" style={{marginLeft:"auto"}}>{entity} · {mp.fromLabel}–{mp.toLabel}</div>
           </div>
           {data&&(
             <>
@@ -172,7 +172,7 @@ export default function BS({ entity = "QM", setEntity, entities = [] }){
             </>
           )}
           {!data&&<div style={{padding:40,textAlign:"center",color:"#888780"}}>Select a date range and click Run Report.</div>}
-          <div style={{padding:"6px 13px",background:"#fafaf8",borderTop:"1px solid #e8e7e0",fontSize:9,color:"#888780"}}>QM · MYR · {mp.fromLabel}–{mp.toLabel}</div>
+          <div style={{padding:"6px 13px",background:"#fafaf8",borderTop:"1px solid #e8e7e0",fontSize:9,color:"#888780"}}>{entity} · MYR · {mp.fromLabel}–{mp.toLabel}</div>
         </div>
       </div>
     </div>
