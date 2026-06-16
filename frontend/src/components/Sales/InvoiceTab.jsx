@@ -12,22 +12,18 @@ import {useAuth} from "../../context/AuthContext";
 
 const FETCH={sales:getSales,pur:getPurchases};
 
-// ── Portal dropdown — renders outside the table so overflow:auto can't clip it
 function DropdownPortal({anchorRef,children,onClose}){
   const [pos,setPos]=useState({top:0,left:0,width:200});
-
   useEffect(()=>{
     if(!anchorRef.current) return;
     const rect=anchorRef.current.getBoundingClientRect();
     setPos({top:rect.bottom+window.scrollY,left:rect.left+window.scrollX,width:Math.max(200,rect.width)});
   },[anchorRef]);
-
   useEffect(()=>{
     const close=e=>{if(!anchorRef.current?.contains(e.target)) onClose();};
     document.addEventListener("mousedown",close);
     return()=>document.removeEventListener("mousedown",close);
   },[anchorRef,onClose]);
-
   return ReactDOM.createPortal(
     <div style={{position:"absolute",top:pos.top,left:pos.left,zIndex:99999,
         background:"#fff",border:"1px solid #e8e7e0",borderRadius:6,
@@ -44,12 +40,8 @@ function startResize(e,thRef){
   e.stopPropagation();
   const th=thRef.current;
   if(!th) return;
-  const startX=e.clientX;
-  const startW=th.offsetWidth;
-  const onMove=ev=>{
-    const newW=Math.max(40,startW+ev.clientX-startX);
-    th.style.width=newW+"px";
-  };
+  const startX=e.clientX,startW=th.offsetWidth;
+  const onMove=ev=>{th.style.width=Math.max(40,startW+ev.clientX-startX)+"px";};
   const onUp=()=>{
     document.removeEventListener("mousemove",onMove);
     document.removeEventListener("mouseup",onUp);
@@ -58,8 +50,6 @@ function startResize(e,thRef){
   document.addEventListener("mouseup",onUp);
 }
 
-// ── ColHeader ─────────────────────────────────────────────────────────────
-// Lives OUTSIDE InvoiceTab — stable reference, never remounted
 function ColHeader({label,col,minWidth=90,align="left",
                     sortKey,sortDir,colFilter,openMenu,
                     onSort,onFilter,onMenu,getUnique}){
@@ -68,10 +58,9 @@ function ColHeader({label,col,minWidth=90,align="left",
   const isOpen=openMenu===col;
   const isSorted=sortKey===col;
   const unique=getUnique(col);
-
   return(
     <th ref={thRef}
-      style={{width: minWidth,minWidth,position:"relative",userSelect:"none",textAlign:align,
+      style={{width:minWidth,minWidth,position:"relative",userSelect:"none",textAlign:align,
               padding:0,background:"#fafaf8",borderBottom:"1px solid #e8e7e0"}}>
       <div style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",padding:"7px 8px"}}
         onMouseDown={e=>e.stopPropagation()}
@@ -84,10 +73,8 @@ function ColHeader({label,col,minWidth=90,align="left",
         {active&&<span style={{color:"#185FA5",fontSize:8,lineHeight:1}}>●</span>}
         <span style={{fontSize:10,color:isOpen?"#185FA5":"#ccc"}}>▾</span>
       </div>
-
       {isOpen&&(
         <DropdownPortal anchorRef={thRef} onClose={()=>onMenu(null)}>
-          {/* Sort section */}
           <div style={{padding:"4px 8px",fontSize:10,color:"#888780",fontWeight:700,letterSpacing:".08em"}}>SORT</div>
           {["asc","desc"].map(dir=>(
             <div key={dir}
@@ -99,8 +86,6 @@ function ColHeader({label,col,minWidth=90,align="left",
               {dir==="asc"?"↑":"↓"}&nbsp;{dir==="asc"?"A → Z / Low → High":"Z → A / High → Low"}
             </div>
           ))}
-
-          {/* Filter section */}
           <div style={{margin:"4px 0",borderTop:"1px solid #f0f0ee"}}/>
           <div style={{padding:"4px 8px",fontSize:10,color:"#888780",fontWeight:700,letterSpacing:".08em"}}>FILTER</div>
           <div onClick={()=>{onFilter(col,null);onMenu(null);}}
@@ -128,13 +113,11 @@ function ColHeader({label,col,minWidth=90,align="left",
           ))}
         </DropdownPortal>
       )}
-     <span className="resize-handle"
-        onMouseDown={e=>startResize(e,thRef)}/>
+      <span className="resize-handle" onMouseDown={e=>startResize(e,thRef)}/>
     </th>
   );
 }
 
-// ── Static th (no sort/filter, just resize) ───────────────────────────────
 function StaticTh({label,minWidth=90,align="left"}){
   const thRef=useRef(null);
   return(
@@ -143,13 +126,11 @@ function StaticTh({label,minWidth=90,align="left"}){
         background:"#fafaf8",borderBottom:"1px solid #e8e7e0",
         whiteSpace:"nowrap",position:"relative"}}>
       {label}
-      <span className="resize-handle"
-          onMouseDown={e=>startResize(e,thRef)}/>
+      <span className="resize-handle" onMouseDown={e=>startResize(e,thRef)}/>
     </th>
   );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const {user}=useAuth();
   const now=new Date();
@@ -172,15 +153,12 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [rowState,setRowState]=useState({});
   const newLineRef=useRef({});
 
-  // Clear data when entity changes
   useEffect(()=>{setInvoices([]);},[entity]);
 
-  // ── Row state helpers ──────────────────────────────────────────────────
   const toggleExpand=sk=>setExpanded(p=>({...p,[sk]:!p[sk]}));
   const updateRow=(sk,key,val)=>setRowState(p=>({...p,[sk]:{...p[sk],[key]:val}}));
   const getRow=(sk,key,fallback="")=>rowState[sk]?.[key]??fallback;
 
-  // ── Fetch ──────────────────────────────────────────────────────────────
   const run=useCallback(async()=>{
     setLoading(true);
     try{
@@ -192,7 +170,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
   const isLocked=d=>lockedPeriods.includes(d.slice(0,7));
 
-  // ── KPIs ───────────────────────────────────────────────────────────────
   let totNet=0,totPS=0,totLIC=0,totUnc=0,cntUnc=0;
   invoices.forEach(inv=>{
     const n=Number(inv.amount);totNet+=n;
@@ -209,7 +186,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     }
   });
 
-  // ── Sort & filter ──────────────────────────────────────────────────────
   const handleSort=(key,dir)=>{setSortKey(key);setSortDir(dir);};
   const handleFilter=(col,val)=>setColFilter(p=>{
     const n={...p};
@@ -217,7 +193,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     return n;
   });
 
-  // KEY FIX: map column key → actual field name on the invoice object
   const COL_FIELD={
     trans_date:"trans_date",acc_no:"acc_no",acc_desc:"de_acc_desc",
     proj_no:"proj_no",ref_no1:"ref_no1",ref_no2:"ref_no2",
@@ -228,7 +203,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     return[...new Set(invoices.map(inv=>inv[field]).filter(v=>v!=null&&v!==""))].sort();
   };
 
-  // Filter uses mapped field name
   const colFiltered=invoices.filter(inv=>
     Object.entries(colFilter).every(([col,val])=>{
       if(!val)return true;
@@ -247,11 +221,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     return 0;
   });
 
-  // Shared props for ColHeader
   const chProps={sortKey,sortDir,colFilter,openMenu,
     onSort:handleSort,onFilter:handleFilter,onMenu:setOpenMenu,getUnique};
 
-  // ── Split helpers ──────────────────────────────────────────────────────
   const openSplit=sk=>setSplitState(p=>({...p,[sk]:{lines:[
     {cat:"PS",amt:"",sd:"",ed:""},
     {cat:"LIC",amt:"",sd:"",ed:""}
@@ -307,7 +279,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     const f=newLineRef.current;
     try{
       await saveManualLine({journal_type:tab==="sales"?"SALES":"PURCHASE",
-        trans_date:f.date||new Date().toISOString().slice(0,10),
+        trans_date:f.date||new Date().toISOString().slice(0,10),acc_no:f.accNo||"",
         de_acc_desc:f.deAcc||"",proj_no:f.proj||"",ref_no1:f.ref||"",
         description:f.desc||"",home_dr:parseFloat(f.hdr)||0,home_cr:parseFloat(f.hcr)||0,
         split_amount:parseFloat(f.hdr)||0,category:f.cat||null,end_user:f.eu||null,
@@ -317,9 +289,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     }catch(e){showToast("⚠ "+e.message);}
   };
 
-  const colRefs=useRef({});
-
-  // ── CSV export ─────────────────────────────────────────────────────────
   const exportCSV=()=>{
     if(!invoices.length){showToast("⚠ No data to export.");return;}
     const headers=["Date","Acc No","Acc Desc","Project Code","Ref 1","Ref 2",
@@ -346,12 +315,12 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const isSales=tab==="sales";
   const noun=isSales?"Sales":"Purchases";
   const periodLbl=mp.fromLabel===mp.toLabel?mp.fromLabel:mp.fromLabel+"–"+mp.toLabel;
+  const colSpanFull=isSales?16:17;
+  const tableMinWidth=isSales?1368:1768;
 
-  // ── RENDER ─────────────────────────────────────────────────────────────
   return(
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",minHeight:0}}>
 
-      {/* Header */}
       <div className="pg-hdr">
         <div className="pg-title">
           {isSales
@@ -364,7 +333,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         </div>
       </div>
 
-      {/* Filter bar */}
       <div className="filter">
         <span className="f-lbl">Entity</span>
         <select className="f-sel" value={entity} onChange={e=>{setEntity(e.target.value);setInvoices([]);}}>
@@ -387,7 +355,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         </button>
       </div>
 
-      {/* Lock bar */}
       <div className="lock-bar">
         <span className="lock-bar-label">Period lock</span>
         <div className="lk-pills">
@@ -405,7 +372,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         </button>
       </div>
 
-      {/* Locked banner */}
       {lockedPeriods.some(ym=>ym>=mp.fromStr.slice(0,7)&&ym<=mp.toStr.slice(0,7))&&(
         <div className="locked-banner">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#E24B4A" strokeWidth="1.5"><rect x="3" y="7" width="10" height="8" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
@@ -413,7 +379,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         </div>
       )}
 
-      {/* KPIs */}
       <div style={{padding:"14px 18px",flexShrink:0,background:"#fff",borderBottom:"1px solid #e8e7e0"}}>
         <div className="kpi-row" style={{marginBottom:0}}>
           <div className="kpi">
@@ -439,7 +404,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         </div>
       </div>
 
-      {/* Table */}
       <div className="content">
         <div style={{background:"#FFF8E6",border:"1px solid #F5C97A",borderRadius:8,
             padding:"8px 14px",fontSize:11,color:"#7A5500",marginBottom:12,
@@ -447,6 +411,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           <strong>MFRS dates</strong> — enter Start Date and End Date on each line to enable automatic recognition.
         </div>
 
+        {/* ── Card — contains invoice table + footer only ── */}
         <div className="card">
           <div className="card-hdr">
             <div className="card-title">{noun} invoices · {periodLbl} · {entity}</div>
@@ -455,10 +420,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
               value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
 
-          {/* overflow-x only — no overflow-y so portal can escape */}
+          {/* Invoice table scroll container */}
           <div style={{overflowX:"auto",overflowY:"visible",width:"100%"}}>
-            <table style={{tableLayout:"fixed", borderCollapse:"collapse",
-               minWidth: isSales ? 1368 : 1468}}>
+            <table style={{tableLayout:"fixed",borderCollapse:"collapse",minWidth:tableMinWidth}}>
               <thead>
                 <tr>
                   <ColHeader label="Date"         col="trans_date"  minWidth={70}  {...chProps}/>
@@ -477,6 +441,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   <StaticTh label="End Date"   minWidth={96}/>
                   <StaticTh label="Days"       minWidth={60} align="right"/>
                   <StaticTh label="Action"     minWidth={120}/>
+                  {/* Filler — removes blank space after Action column */}
+                  <th style={{width:"100%",background:"#fafaf8",borderBottom:"1px solid #e8e7e0"}}/>
                 </tr>
               </thead>
               <tbody>
@@ -511,7 +477,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
                   return(
                     <React.Fragment key={inv.source_key}>
-                      {/* Main invoice row */}
                       <tr className={"row-hover"+(locked?" row-locked":"")}>
                         <td className="muted">{fmtDateShort(inv.trans_date)}</td>
                         <td className="mono muted" style={{fontSize:11}}>{inv.acc_no||"—"}</td>
@@ -577,9 +542,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 </span>
                               :<span/>}
                         </td>
+                        <td/>{/* filler */}
                       </tr>
 
-                      {/* Existing split lines */}
                       {hasSplit&&isEx&&inv.splits.map((line,li)=>(
                         <tr key={"s"+li} className={"row-split"+(locked?" row-split-locked":"")}>
                           <td colSpan={isSales?4:5}/>
@@ -607,11 +572,12 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                           <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td className="tr mono muted">{line.total_days||"—"}</td>
                           <td/>
+                          <td/>{/* filler */}
                         </tr>
                       ))}
                       {hasSplit&&isEx&&(
                         <tr className={"row-addsplit"+(locked?" row-addsplit-locked":"")}>
-                          <td colSpan={isSales?15:16} style={{textAlign:"right"}}>
+                          <td colSpan={colSpanFull+1} style={{textAlign:"right"}}>
                             <span className="val-ok">
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.split_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
@@ -619,7 +585,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         </tr>
                       )}
 
-                      {/* Draft split UI */}
                       {inDraft&&inDraft.lines.map((line,li)=>{
                         const tDays=line.sd&&line.ed
                           ?Math.round((new Date(line.ed)-new Date(line.sd))/86400000)+1:"";
@@ -660,6 +625,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             <td>
                               <button className="btn-del" onClick={()=>removeSplitLine(inv.source_key,li)}>✕</button>
                             </td>
+                            <td/>{/* filler */}
                           </tr>
                         );
                       })}
@@ -668,7 +634,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         const valid=Math.abs(total-amt)<1;
                         return(
                           <tr className="row-addsplit">
-                            <td colSpan={isSales?13:14} style={{textAlign:"right"}}>
+                            <td colSpan={colSpanFull-1} style={{textAlign:"right"}}>
                               {valid
                                 ?<span className="val-ok">✓ {fmtMYR(total)} = {fmtMYR(amt)}</span>
                                 :<span className="val-warn">⚠ {fmtMYR(total)} / {fmtMYR(amt)}</span>}
@@ -679,6 +645,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               <button className="btn-save" onClick={()=>saveSplit_(inv.source_key,amt)} style={{marginRight:4}}>Save split</button>
                               <button className="btn-del" onClick={()=>setSplitState(p=>{const n={...p};delete n[inv.source_key];return n;})}>Cancel</button>
                             </td>
+                            <td/>{/* filler */}
                           </tr>
                         );
                       })()}
@@ -688,7 +655,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
                 {filtered.length===0&&(
                   <tr>
-                    <td colSpan={isSales?16:17} style={{textAlign:"center",padding:24,color:"#888780"}}>
+                    <td colSpan={colSpanFull+1} style={{textAlign:"center",padding:24,color:"#888780"}}>
                       {invoices.length===0
                         ?"No invoices found. Select a period and click Run."
                         :"No results match your search."}
@@ -697,9 +664,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                 )}
               </tbody>
             </table>
-          </div>
+          </div>{/* end invoice table scroll container */}
 
-          {/* Table footer */}
+          {/* Table footer — stays inside card, above new line form */}
           <div className="tbl-foot">
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="foot-dot" style={{background:"#185FA5"}}/>
@@ -720,70 +687,80 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
               </button>
             </div>
           </div>
-        </div>
+        </div>{/* end card */}
 
-        {/* New deferred line form */}
+        {/* ── New deferred line form ────────────────────────────────────────
+            Outside the card — appears below card footer (screenshot 1 design).
+            Has its own scroll container with same minWidth as invoice table
+            so it stays width-aligned with the card on all screen sizes.
+        ───────────────────────────────────────────────────────────────────── */}
         {newLineOpen&&(
-          <table style={{width:"100%",marginTop:-12}}>
-            <tbody>
-              <tr className="new-line-row">
-                <td><span className="new-line-lbl">Date</span>
-                  <input type="date" onChange={e=>{newLineRef.current.date=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">Acc. Desc.</span>
-                  <input type="text" placeholder="Account description" style={{width:120}}
-                    onChange={e=>{newLineRef.current.deAcc=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">Project Code</span>
-                  <input type="text" placeholder="PRJ-001" style={{width:90}}
-                    onChange={e=>{newLineRef.current.proj=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">Ref. 1</span>
-                  <input type="text" placeholder="Ref no." style={{width:90}}
-                    onChange={e=>{newLineRef.current.ref=e.target.value;}}/></td>
-                {!isSales&&<td><span className="new-line-lbl">Ref. 2</span>
-                  <input type="text" placeholder="Ref no." style={{width:90}}
-                    onChange={e=>{newLineRef.current.ref2=e.target.value;}}/></td>}
-                <td><span className="new-line-lbl">Desc.</span>
-                  <input type="text" placeholder="Description"
-                    onChange={e=>{newLineRef.current.desc=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">Home DR</span>
-                  <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}}
-                    onChange={e=>{newLineRef.current.hdr=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">Home CR</span>
-                  <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}}
-                    onChange={e=>{newLineRef.current.hcr=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">Amount</span>
-                  <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}} readOnly/></td>
-                <td><span className="new-line-lbl">Type</span>
-                  <select onChange={e=>{newLineRef.current.cat=e.target.value;}}>
-                    <option value="PS">PS</option>
-                    <option value="LIC">LIC</option>
-                    <option value="HW">HW</option>
-                    <option value="AMS">AMS</option>
-                  </select></td>
-                <td><span className="new-line-lbl">End User</span>
-                  <input type="text" placeholder="End user" style={{width:100}}
-                    onChange={e=>{newLineRef.current.eu=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">Start Date</span>
-                  <input type="date" onChange={e=>{newLineRef.current.sd=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">End Date</span>
-                  <input type="date" onChange={e=>{newLineRef.current.ed=e.target.value;}}/></td>
-                <td><span className="new-line-lbl">Days</span>
-                  <input type="text" placeholder="—" style={{width:60,textAlign:"right"}} readOnly/></td>
-                <td style={{whiteSpace:"nowrap",verticalAlign:"bottom"}}>
-                  <span className="new-line-lbl" style={{display:"block",marginBottom:2}}>Remark</span>
-                  <input type="text" placeholder="Optional…"
-                    style={{width:110,fontSize:11,border:"1px solid #e8e7e0",
-                            borderRadius:4,padding:"3px 6px",marginBottom:3,display:"block"}}
-                    onChange={e=>{newLineRef.current.rm=e.target.value;}}/>
-                  <button className="btn-save" onClick={handleNewLine} style={{marginRight:4}}>Save</button>
-                  <button className="btn-del" onClick={()=>setNewLineOpen(false)}>✕</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div style={{overflowX:"auto",overflowY:"visible",width:"100%",marginTop:0}}>
+            <table style={{borderCollapse:"collapse",minWidth:tableMinWidth}}>
+              <tbody>
+                <tr className="new-line-row">
+                  <td><span className="new-line-lbl">Date</span>
+                    <input type="date" onChange={e=>{newLineRef.current.date=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Acc. No.</span>
+                    <input type="text" placeholder="e.g. 300-0000" style={{width:100}}
+                      onChange={e=>{newLineRef.current.accNo=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Acc. Desc.</span>
+                    <input type="text" placeholder="Account description" style={{width:120}}
+                      onChange={e=>{newLineRef.current.deAcc=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Project Code</span>
+                    <input type="text" placeholder="PRJ-001" style={{width:90}}
+                      onChange={e=>{newLineRef.current.proj=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Ref. 1</span>
+                    <input type="text" placeholder="Ref no." style={{width:90}}
+                      onChange={e=>{newLineRef.current.ref=e.target.value;}}/></td>
+                  {!isSales&&<td><span className="new-line-lbl">Ref. 2</span>
+                    <input type="text" placeholder="Ref no." style={{width:90}}
+                      onChange={e=>{newLineRef.current.ref2=e.target.value;}}/></td>}
+                  <td><span className="new-line-lbl">Desc.</span>
+                    <input type="text" placeholder="Description"
+                      onChange={e=>{newLineRef.current.desc=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Home DR</span>
+                    <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}}
+                      onChange={e=>{newLineRef.current.hdr=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Home CR</span>
+                    <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}}
+                      onChange={e=>{newLineRef.current.hcr=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Amount</span>
+                    <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}} readOnly/></td>
+                  <td><span className="new-line-lbl">Type</span>
+                    <select onChange={e=>{newLineRef.current.cat=e.target.value;}}>
+                      <option value="PS">PS</option>
+                      <option value="LIC">LIC</option>
+                      <option value="HW">HW</option>
+                      <option value="AMS">AMS</option>
+                    </select></td>
+                  <td><span className="new-line-lbl">End User</span>
+                    <input type="text" placeholder="End user" style={{width:100}}
+                      onChange={e=>{newLineRef.current.eu=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Start Date</span>
+                    <input type="date" onChange={e=>{newLineRef.current.sd=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">End Date</span>
+                    <input type="date" onChange={e=>{newLineRef.current.ed=e.target.value;}}/></td>
+                  <td><span className="new-line-lbl">Days</span>
+                    <input type="text" placeholder="—" style={{width:60,textAlign:"right"}} readOnly/></td>
+                  <td colSpan={2} style={{whiteSpace:"nowrap",verticalAlign:"bottom"}}>
+                    <span className="new-line-lbl" style={{display:"block",marginBottom:2}}>Remark</span>
+                    <input type="text" placeholder="Optional…"
+                      style={{width:110,fontSize:11,border:"1px solid #e8e7e0",
+                              borderRadius:4,padding:"3px 6px",marginBottom:3,display:"block"}}
+                      onChange={e=>{newLineRef.current.rm=e.target.value;}}/>
+                    <button className="btn-save" onClick={handleNewLine} style={{marginRight:4}}>Save</button>
+                    <button className="btn-del" onClick={()=>setNewLineOpen(false)}>✕</button>
+                  </td>
+                  <td/>{/* filler — matches invoice table filler col */}
+                </tr>
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
 
-      {/* Modals */}
+      </div>{/* end content */}
+
       <LockModal open={lockModal} onClose={()=>setLockModal(false)} onConfirm={handleLock}/>
       <UnlockModal open={unlockModal.open} invNo={unlockModal.invNo}
         onClose={()=>setUnlockModal({open:false,invNo:""})}
