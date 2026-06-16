@@ -1,13 +1,11 @@
-// Step 1 — add useEffect + axios import at top
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import API from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
 
 export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
   const { user } = useAuth();
   const isManager = user?.role === "manager" || user?.role === "admin";
 
-  // Pre-fill assignee: manager starts blank, staff pre-fills themselves
   const [form, setForm] = useState({
     todo: "", desc: "", remark: "",
     src: defaultSrc || "sales",
@@ -16,14 +14,29 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
   });
   const [users, setUsers] = useState([]);
 
-  // Step 2 — fetch users from backend
   useEffect(() => {
     if (open && isManager) {
-      axios.get("/api/auth/users")
-        .then(r => setUsers(r.data))
-        .catch(() => {});
+      API.get("/api/auth/users")
+        .then(r => {
+          // Fix: ensure r.data is always an array
+          const data = Array.isArray(r.data) ? r.data : [];
+          setUsers(data);
+        })
+        .catch(() => setUsers([]));
     }
   }, [open, isManager]);
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (open) {
+      setForm({
+        todo: "", desc: "", remark: "",
+        src: defaultSrc || "sales",
+        assignee: isManager ? "" : (user?.user_id || ""),
+        due: ""
+      });
+    }
+  }, [open]);
 
   if (!open) return null;
   const u = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
@@ -34,13 +47,36 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
         <div className="modal-title">✓ New Adjustment Task</div>
         <div className="modal-sub">Flag an unusual item that needs correction.</div>
 
-        {/* ... Source, Todo, Description, Remark fields unchanged ... */}
+        <div className="modal-field">
+          <label>Source</label>
+          <select value={form.src} onChange={u("src")}>
+            <option value="sales">Sales</option>
+            <option value="pur">Purchases</option>
+          </select>
+        </div>
+
+        <div className="modal-field">
+          <label>Task Title</label>
+          <input type="text" value={form.todo} onChange={u("todo")}
+            placeholder="e.g. Wrong invoice amount — INV-2025-002"/>
+        </div>
+
+        <div className="modal-field">
+          <label>Description</label>
+          <input type="text" value={form.desc} onChange={u("desc")}
+            placeholder="Describe the issue"/>
+        </div>
+
+        <div className="modal-field">
+          <label>Remark</label>
+          <input type="text" value={form.remark} onChange={u("remark")}
+            placeholder="Optional note or reference"/>
+        </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div className="modal-field" style={{ marginBottom: 0 }}>
             <label>Assigned To</label>
-
-            // Step 3 — role-gate the assignee field
+            {/* Role-gate the assignee field */}
             {isManager ? (
               <select value={form.assignee} onChange={u("assignee")}>
                 <option value="">— Select assignee</option>
