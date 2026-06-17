@@ -170,7 +170,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
   const isLocked=d=>lockedPeriods.includes(d.slice(0,7));
 
-  // KPIs — use net_amount from API response
   let totNet=0,totPS=0,totLIC=0,totUnc=0,cntUnc=0;
   invoices.forEach(inv=>{
     const n=Number(inv.amount);totNet+=n;
@@ -455,16 +454,26 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                 {filtered.map(inv=>{
                   const locked=isLocked(inv.trans_date);
                   const hasSplit=inv.splits&&inv.splits.length>0;
+                  const isMultiSplit=inv.splits&&inv.splits.length>1;
+                  const singleSplit=hasSplit&&!isMultiSplit?inv.splits[0]:null;
                   const inDraft=splitState[inv.source_key];
                   const hdr=Number(inv.home_dr),hcr=Number(inv.home_cr),amt=Number(inv.amount);
                   const isEx=expanded[inv.source_key];
 
+                  // Type badge logic
                   let typeBdg;
                   const savedCat=inv.category||getRow(inv.source_key,"cat","");
-                  if(hasSplit){
+                  if(isMultiSplit){
+                    // Multiple splits — show expandable Split badge
                     typeBdg=<span className="bdg bdg-split" style={{cursor:"pointer"}}
                       onClick={()=>toggleExpand(inv.source_key)}>
                       Split {isEx?"▲":"▼"}
+                    </span>;
+                  }else if(singleSplit){
+                    // Single split — show category badge inline
+                    typeBdg=<span className={singleSplit.category==="LIC"?"bdg bdg-lic":
+                      singleSplit.category==="PS"?"bdg bdg-ps":"bdg"}>
+                      {singleSplit.category||"—"}
                     </span>;
                   }else if(savedCat==="PS"){
                     typeBdg=<span className="bdg bdg-ps">PS</span>;
@@ -506,55 +515,76 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         <td className="tr mono muted">{fmtMYR(hcr)}</td>
                         <td className="tr mono">{fmtMYR(amt)}</td>
                         <td>{typeBdg}</td>
+
+                        {/* End User — show inline for single split */}
                         <td>
-                          {hasSplit
-                            ?<span className="muted">—</span>
-                            :<input type="text" className="f-date"
-                                value={getRow(inv.source_key,"eu")}
-                                readOnly={locked}
-                                placeholder="End user"
-                                onChange={e=>updateRow(inv.source_key,"eu",e.target.value)}
-                                style={{width:90,fontSize:11,padding:"3px 5px"}}/>}
+                          {singleSplit
+                            ?<span style={{fontSize:11,color:"#5f5e5a"}}>{singleSplit.end_user||"—"}</span>
+                            :hasSplit
+                              ?<span className="muted">—</span>
+                              :<input type="text" className="f-date"
+                                  value={getRow(inv.source_key,"eu")}
+                                  readOnly={locked}
+                                  placeholder="End user"
+                                  onChange={e=>updateRow(inv.source_key,"eu",e.target.value)}
+                                  style={{width:90,fontSize:11,padding:"3px 5px"}}/>}
                         </td>
+
+                        {/* Start Date — show inline for single split */}
                         <td>
-                          <input type="date" className="f-date"
-                            value={getRow(inv.source_key,"sd")}
-                            readOnly={locked||hasSplit}
-                            onChange={e=>updateRow(inv.source_key,"sd",e.target.value)}
-                            style={{width:96,fontSize:11,padding:"3px 5px",
-                                    borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>
+                          {singleSplit
+                            ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.start_date)||"—"}</span>
+                            :<input type="date" className="f-date"
+                              value={getRow(inv.source_key,"sd")}
+                              readOnly={locked||isMultiSplit}
+                              onChange={e=>updateRow(inv.source_key,"sd",e.target.value)}
+                              style={{width:96,fontSize:11,padding:"3px 5px",
+                                      borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
                         </td>
+
+                        {/* End Date — show inline for single split */}
                         <td>
-                          <input type="date" className="f-date"
-                            value={getRow(inv.source_key,"ed")}
-                            readOnly={locked||hasSplit}
-                            onChange={e=>updateRow(inv.source_key,"ed",e.target.value)}
-                            style={{width:96,fontSize:11,padding:"3px 5px",
-                                    borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>
+                          {singleSplit
+                            ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.end_date)||"—"}</span>
+                            :<input type="date" className="f-date"
+                              value={getRow(inv.source_key,"ed")}
+                              readOnly={locked||isMultiSplit}
+                              onChange={e=>updateRow(inv.source_key,"ed",e.target.value)}
+                              style={{width:96,fontSize:11,padding:"3px 5px",
+                                      borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
                         </td>
+
+                        {/* Days — show inline for single split */}
                         <td className="tr mono muted">
-                          {(()=>{
-                            const sd=getRow(inv.source_key,"sd"),ed=getRow(inv.source_key,"ed");
-                            return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
-                          })()}
+                          {singleSplit
+                            ?singleSplit.total_days||"—"
+                            :(()=>{
+                              const sd=getRow(inv.source_key,"sd"),ed=getRow(inv.source_key,"ed");
+                              return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
+                            })()}
                         </td>
+
+                        {/* Action */}
                         <td style={{whiteSpace:"nowrap"}}>
                           {locked
                             ?<button className="btn-unlock-req"
                                 onClick={()=>setUnlockModal({open:true,invNo:inv.ref_no1||"#"+inv.source_key})}>
                                 🔓 Request unlock
                               </button>
-                            :!hasSplit&&!inDraft
-                              ?<span style={{display:"flex",gap:4}}>
-                                  <button className="btn-save" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</button>
-                                  <button className="btn-split" onClick={()=>openSplit(inv.source_key)}>＋ Split</button>
-                                </span>
-                              :<span/>}
+                            :singleSplit
+                              ?<span style={{fontSize:10,color:"#888780"}}>✓ Saved</span>
+                              :!hasSplit&&!inDraft
+                                ?<span style={{display:"flex",gap:4}}>
+                                    <button className="btn-save" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</button>
+                                    <button className="btn-split" onClick={()=>openSplit(inv.source_key)}>＋ Split</button>
+                                  </span>
+                                :<span/>}
                         </td>
                         <td/>
                       </tr>
 
-                      {hasSplit&&isEx&&inv.splits.map((line,li)=>(
+                      {/* Multi-split expanded rows */}
+                      {isMultiSplit&&isEx&&inv.splits.map((line,li)=>(
                         <tr key={"s"+li} className={"row-split"+(locked?" row-split-locked":"")}>
                           <td colSpan={isSales?5:6}/>
                           <td colSpan={2}>
@@ -576,24 +606,24 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             {fmtMYR(Number(line.net_amount))}
                           </td>
                           <td><span className={line.category==="LIC"?"bdg bdg-lic":"bdg bdg-ps"}>{line.category||"—"}</span></td>
-                          
                           <td><input type="date" className="f-date" defaultValue={line.start_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td className="tr mono muted">{line.total_days||"—"}</td>
                           <td colSpan={2}/>
                         </tr>
                       ))}
-                      {hasSplit&&isEx&&(
+                      {isMultiSplit&&isEx&&(
                         <tr className={"row-addsplit"+(locked?" row-addsplit-locked":"")}>
                           <td colSpan={colSpanFull-2} style={{textAlign:"right"}}>
                             <span className="val-ok">
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
                           </td>
-                          <td/>
+                          <td colSpan={3}/>
                         </tr>
                       )}
 
+                      {/* Draft split UI */}
                       {inDraft&&inDraft.lines.map((line,li)=>{
                         const tDays=line.sd&&line.ed
                           ?Math.round((new Date(line.ed)-new Date(line.sd))/86400000)+1:"";
@@ -619,7 +649,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 placeholder="0"/>
                             </td>
                             <td><span className={line.cat==="LIC"?"bdg bdg-lic":"bdg bdg-ps"}>{line.cat}</span></td>
-                          
                             <td>
                               <input type="date" className="f-date" value={line.sd}
                                 onChange={e=>updateSplitLine(inv.source_key,li,"sd",e.target.value)}
