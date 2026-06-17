@@ -25,7 +25,7 @@ export const numFmt = n => {
 };
 export function fmtDateShort(s) {
   const d = new Date(s+"T00:00:00");
-  return d.getDate()+" "+MN[d.getMonth()];
+  return d.getDate()+" "+MN[d.getMonth()]+ " "+d.getFullYear();
 }
 export function monthStarts(from, to) {
   const cols=[]; let y=from.getFullYear(),m=from.getMonth();
