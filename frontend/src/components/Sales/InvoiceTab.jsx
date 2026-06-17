@@ -12,6 +12,15 @@ import {useAuth} from "../../context/AuthContext";
 
 const FETCH={sales:getSales,pur:getPurchases};
 
+// ── Category badge helper ─────────────────────────────────────────────────
+function CatBadge({cat}){
+  if(cat==="PS")  return <span className="bdg bdg-ps">PS</span>;
+  if(cat==="LIC") return <span className="bdg bdg-lic">LIC</span>;
+  if(cat==="HW")  return <span className="bdg" style={{background:"#FFF3E0",color:"#E65100"}}>HW</span>;
+  if(cat==="AMS") return <span className="bdg" style={{background:"#E8F5E9",color:"#1B5E20"}}>AMS</span>;
+  return <span className="bdg">{cat||"—"}</span>;
+}
+
 function DropdownPortal({anchorRef,children,onClose}){
   const [pos,setPos]=useState({top:0,left:0,width:200});
   useEffect(()=>{
@@ -170,18 +179,23 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
   const isLocked=d=>lockedPeriods.includes(d.slice(0,7));
 
-  let totNet=0,totPS=0,totLIC=0,totUnc=0,cntUnc=0;
+  // ── KPIs — all 4 categories + uncategorised ────────────────────────────
+  let totNet=0,totPS=0,totLIC=0,totHW=0,totAMS=0,totUnc=0,cntUnc=0;
   invoices.forEach(inv=>{
     const n=Number(inv.amount);totNet+=n;
     if(inv.splits&&inv.splits.length){
       inv.splits.forEach(s=>{
-        if(s.category==="PS")totPS+=Number(s.net_amount);
-        else if(s.category==="LIC")totLIC+=Number(s.net_amount);
+        if(s.category==="PS")       totPS+=Number(s.net_amount);
+        else if(s.category==="LIC") totLIC+=Number(s.net_amount);
+        else if(s.category==="HW")  totHW+=Number(s.net_amount);
+        else if(s.category==="AMS") totAMS+=Number(s.net_amount);
       });
     }else{
       const cat=inv.category||inv._cat||"";
-      if(cat==="PS")totPS+=n;
-      else if(cat==="LIC")totLIC+=n;
+      if(cat==="PS")       totPS+=n;
+      else if(cat==="LIC") totLIC+=n;
+      else if(cat==="HW")  totHW+=n;
+      else if(cat==="AMS") totAMS+=n;
       else{totUnc+=n;cntUnc++;}
     }
   });
@@ -387,6 +401,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         </div>
       )}
 
+      {/* ── KPI cards ── */}
       <div style={{padding:"14px 18px",flexShrink:0,background:"#fff",borderBottom:"1px solid #e8e7e0"}}>
         <div className="kpi-row" style={{marginBottom:0}}>
           <div className="kpi">
@@ -403,6 +418,16 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
             <div className="kpi-lbl">Licence</div>
             <div className="kpi-val a">{fmtMYR(Math.abs(totLIC))}</div>
             <div className="kpi-sub">{totNet?((totLIC/totNet)*100).toFixed(1)+"% of total":""}</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-lbl">Hardware</div>
+            <div className="kpi-val" style={{color:"#E65100"}}>{fmtMYR(Math.abs(totHW))}</div>
+            <div className="kpi-sub">{totNet?((totHW/totNet)*100).toFixed(1)+"% of total":""}</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-lbl">AMS</div>
+            <div className="kpi-val" style={{color:"#1B5E20"}}>{fmtMYR(Math.abs(totAMS))}</div>
+            <div className="kpi-sub">{totNet?((totAMS/totNet)*100).toFixed(1)+"% of total":""}</div>
           </div>
           <div className="kpi">
             <div className="kpi-lbl">Uncategorised</div>
@@ -460,25 +485,17 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   const hdr=Number(inv.home_dr),hcr=Number(inv.home_cr),amt=Number(inv.amount);
                   const isEx=expanded[inv.source_key];
 
-                  // Type badge logic
                   let typeBdg;
                   const savedCat=inv.category||getRow(inv.source_key,"cat","");
                   if(isMultiSplit){
-                    // Multiple splits — show expandable Split badge
                     typeBdg=<span className="bdg bdg-split" style={{cursor:"pointer"}}
                       onClick={()=>toggleExpand(inv.source_key)}>
                       Split {isEx?"▲":"▼"}
                     </span>;
                   }else if(singleSplit){
-                    // Single split — show category badge inline
-                    typeBdg=<span className={singleSplit.category==="LIC"?"bdg bdg-lic":
-                      singleSplit.category==="PS"?"bdg bdg-ps": singleSplit.category==="HW"?"bdg bdg-hw": singleSplit.category==="AMS"?"bdg bdg-ams":"bdg"}>
-                      {singleSplit.category||"—"}
-                    </span>;
-                  }else if(savedCat==="PS"){
-                    typeBdg=<span className="bdg bdg-ps">PS</span>;
-                  }else if(savedCat==="LIC"){
-                    typeBdg=<span className="bdg bdg-lic">LIC</span>;
+                    typeBdg=<CatBadge cat={singleSplit.category}/>;
+                  }else if(savedCat){
+                    typeBdg=<CatBadge cat={savedCat}/>;
                   }else{
                     typeBdg=locked
                       ?<span className="bdg bdg-none">— Assign</span>
@@ -515,8 +532,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         <td className="tr mono muted">{fmtMYR(hcr)}</td>
                         <td className="tr mono">{fmtMYR(amt)}</td>
                         <td>{typeBdg}</td>
-
-                        {/* End User — show inline for single split */}
                         <td>
                           {singleSplit
                             ?<span style={{fontSize:11,color:"#5f5e5a"}}>{singleSplit.end_user||"—"}</span>
@@ -529,8 +544,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                   onChange={e=>updateRow(inv.source_key,"eu",e.target.value)}
                                   style={{width:90,fontSize:11,padding:"3px 5px"}}/>}
                         </td>
-
-                        {/* Start Date — show inline for single split */}
                         <td>
                           {singleSplit
                             ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.start_date)||"—"}</span>
@@ -541,8 +554,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               style={{width:96,fontSize:11,padding:"3px 5px",
                                       borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
                         </td>
-
-                        {/* End Date — show inline for single split */}
                         <td>
                           {singleSplit
                             ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.end_date)||"—"}</span>
@@ -553,8 +564,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               style={{width:96,fontSize:11,padding:"3px 5px",
                                       borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
                         </td>
-
-                        {/* Days — show inline for single split */}
                         <td className="tr mono muted">
                           {singleSplit
                             ?singleSplit.total_days||"—"
@@ -563,8 +572,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
                             })()}
                         </td>
-
-                        {/* Action */}
                         <td style={{whiteSpace:"nowrap"}}>
                           {locked
                             ?<button className="btn-unlock-req"
@@ -583,7 +590,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         <td/>
                       </tr>
 
-                      {/* Multi-split expanded rows */}
                       {isMultiSplit&&isEx&&inv.splits.map((line,li)=>(
                         <tr key={"s"+li} className={"row-split"+(locked?" row-split-locked":"")}>
                           <td colSpan={isSales?5:6}/>
@@ -592,9 +598,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               <div style={{width:2,height:34,background:locked?"#F09595":"#85B7EB",
                                   flexShrink:0,marginRight:6,borderRadius:1}}/>
                               <div>
-                                <span className={line.category==="LIC"?"bdg bdg-lic": line-category==="PS"?"bdg bdg-ps":line.category==="HW"?"bdg bdg-hw": line.category==="AMS"?"bdg bdg-ams":"bdg"}>
-                                  {line.category||"—"}
-                                </span>
+                                <CatBadge cat={line.category}/>
                                 <div style={{fontSize:9,color:locked?"#c0392b":"#888780",marginTop:3}}>
                                   {locked?"🔒 Locked":"MFRS recognition period"}
                                 </div>
@@ -605,7 +609,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                           <td className="tr mono" style={{color:line.category==="LIC"?"#3C3489":"#0C447C"}}>
                             {fmtMYR(Number(line.net_amount))}
                           </td>
-                          <td><span className={line.category==="LIC"?"bdg bdg-lic":"bdg bdg-ps"}>{line.category||"—"}</span></td>
+                          <td><CatBadge cat={line.category}/></td>
                           <td><input type="date" className="f-date" defaultValue={line.start_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td className="tr mono muted">{line.total_days||"—"}</td>
@@ -623,7 +627,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         </tr>
                       )}
 
-                      {/* Draft split UI */}
                       {inDraft&&inDraft.lines.map((line,li)=>{
                         const tDays=line.sd&&line.ed
                           ?Math.round((new Date(line.ed)-new Date(line.sd))/86400000)+1:"";
@@ -648,7 +651,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 onChange={e=>updateSplitLine(inv.source_key,li,"amt",e.target.value)}
                                 placeholder="0"/>
                             </td>
-                            <td><span className={line.cat==="LIC"?"bdg bdg-lic":"bdg bdg-ps"}>{line.cat}</span></td>
+                            <td><CatBadge cat={line.cat}/></td>
                             <td>
                               <input type="date" className="f-date" value={line.sd}
                                 onChange={e=>updateSplitLine(inv.source_key,li,"sd",e.target.value)}
@@ -704,12 +707,17 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
             </table>
           </div>
 
+          {/* ── Table footer ── */}
           <div className="tbl-foot">
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="foot-dot" style={{background:"#185FA5"}}/>
               <span>PS: <strong>{fmtMYR(totPS)}</strong></span>
               <div className="foot-dot" style={{background:"#7F77DD"}}/>
               <span>Licence: <strong>{fmtMYR(totLIC)}</strong></span>
+              <div className="foot-dot" style={{background:"#E65100"}}/>
+              <span>HW: <strong>{fmtMYR(totHW)}</strong></span>
+              <div className="foot-dot" style={{background:"#1B5E20"}}/>
+              <span>AMS: <strong>{fmtMYR(totAMS)}</strong></span>
               <div className="foot-dot" style={{background:"#e8e7e0"}}/>
               <span>Uncategorised: <strong>{fmtMYR(totUnc)}</strong></span>
             </div>
