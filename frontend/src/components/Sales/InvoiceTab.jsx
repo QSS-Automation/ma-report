@@ -357,7 +357,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           </button>
         ))}
         <button className="run" onClick={run} disabled={loading}>
-          {loading?"Loading…":"Run"}
+          {loading?"Loading…":"Run Report"}
         </button>
       </div>
 
