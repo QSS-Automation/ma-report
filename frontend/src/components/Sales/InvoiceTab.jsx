@@ -285,6 +285,22 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     }catch(e){showToast("⚠ "+e.message);}
   };
 
+  const resetSplit=async(sk)=>{
+    if(!window.confirm("Reset this entry? Dates and category will be cleared.")) return;
+    try{
+      const res=await saveSplits({
+        source_key:  sk,
+        journal_type:tab==="sales"?"SALES":"PURCHASE",
+        user:        user?.user_id||"user",
+        entity,
+        splits:[]
+      });
+      if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
+      showToast("✓ Reset. You can now edit.");
+      run();
+    }catch(e){showToast("⚠ "+e.message);}
+  };
+  
   const handleLock=async period=>{
     setLockModal(false);
     try{
@@ -579,7 +595,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 🔓 Request unlock
                               </button>
                             :singleSplit
-                              ?<span style={{fontSize:10,color:"#888780"}}>✓ Saved</span>
+                              ?singleSplit.is_locked
+                                ?<span style={{fontSize:10,color:"#888780"}}>🔒 Locked</span>
+                                :<button className="btn-split" onClick={()=>resetSplit(inv.source_key)}>✎ Edit/Update</button>
                               :!hasSplit&&!inDraft
                                 ?<span style={{display:"flex",gap:4}}>
                                     <button className="btn-save" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</button>
@@ -622,6 +640,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             <span className="val-ok">
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
+                            &nbsp;&nbsp;
+                            {!locked&&<button className="btn-split" onClick={()=>resetSplit(inv.source_key)}>✎ Edit/Update</button>}
                           </td>
                           <td colSpan={3}/>
                         </tr>
