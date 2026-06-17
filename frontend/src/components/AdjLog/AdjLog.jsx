@@ -12,21 +12,22 @@ const BADGE={split:"log-split",newline:"log-newline",edit:"log-edit",unlock:"log
 const LABEL={split:"SPLIT",newline:"NEW LINE",edit:"EDIT",unlock:"UNLOCK REQ"};
 
 export default function AdjLog({ entity = "QM", entities = [] }) {
- const { user } = useAuth();
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
-
-  useEffect(() => {
-    if (!user) return;
-    getLog(entity || "QM", user.role, user.user_id,  fromDate, toDate)
-      .then(r => setRows(r.data))
-      .catch(() => setRows([]));
-  }, [entity, user?.user_id,fromDate, toDate]);
   const [type,setType]=useState("all");
   const [fEntity, setFEntity] = useState("all");
   const [tab,setTab]=useState("all");
   const now=new Date();
   const [fromDate,setFromDate]=useState(now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01");
   const [toDate,setToDate]=useState(now.getFullYear()+"-12-31");
+  
+  useEffect(() => {
+    if (!user) return;
+    getLog(entity || "QM", user.role, user.user_id,  fromDate, toDate)
+      .then(r => setRows(r.data))
+      .catch(() => setRows([]));
+  }, [entity, user?.user_id,fromDate, toDate]);
+  
   const filtered=rows.filter(r=>
     (type==="all"||r.action_type===type||r.type===type) &&
     (tab==="all"||r.journal_type===tab||r.tab===tab) &&
