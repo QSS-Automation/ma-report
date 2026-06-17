@@ -252,16 +252,22 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   };
 
   const saveNoSplit=async(sk,invAmt)=>{
-    const rs=rowState[sk]||{};
-    if(!rs.sd||!rs.ed){showToast("⚠ Please enter Start Date and End Date");return;}
-    try{
-      await saveSplits({source_key:sk,journal_type:tab==="sales"?"SALES":"PURCHASE",
-        user:user?.user_id||"user",entity,
-        splits:[{category:null,split_amount:parseFloat(invAmt)||0,
-          start_date:rs.sd||null,end_date:rs.ed||null,end_user:rs.eu||null}]});
-      showToast("✓ Saved");run();
-    }catch(e){showToast("⚠ "+e.message);}
-  };
+  const rs=rowState[sk]||{};
+  if(!rs.sd||!rs.ed){showToast("⚠ Please enter Start Date and End Date");return;}
+  try{
+    await saveSplits({source_key:sk,
+      journal_type:tab==="sales"?"SALES":"PURCHASE",
+      user:user?.user_id||"user",entity,
+      splits:[{
+        category:    rs.cat||null,     // ← use rowState cat, not inv._cat
+        split_amount:parseFloat(invAmt)||0,
+        start_date:  rs.sd||null,
+        end_date:    rs.ed||null,
+        end_user:    rs.eu||null
+      }]});
+    showToast("✓ Saved");run();
+  }catch(e){showToast("⚠ "+e.message);}
+};
 
   const handleLock=async period=>{
     setLockModal(false);
@@ -454,11 +460,13 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   const isEx=expanded[inv.source_key];
 
                   let typeBdg;
+                  const savedCat = inv.category || inv._cat || getRow(inv.source_key,"cat","");
                   if(hasSplit){
                     typeBdg=<span className="bdg bdg-split" style={{cursor:"pointer"}}
                       onClick={()=>toggleExpand(inv.source_key)}>
                       Split {isEx?"▲":"▼"}
                     </span>;
+                    
                   }else if(inv._cat==="PS"){
                     typeBdg=<span className="bdg bdg-ps">PS</span>;
                   }else if(inv._cat==="LIC"){
@@ -466,13 +474,15 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   }else{
                     typeBdg=locked
                       ?<span className="bdg bdg-none">— Assign</span>
-                      :<select className="cat-sel" onChange={e=>{inv._cat=e.target.value;}}>
+                      :<select className="cat-sel"
+                        value={getRow(inv.source_key,"cat","")}
+                        onChange={e=>updateRow(inv.source_key,"cat",e.target.value)}>
                         <option value="">— Assign</option>
                         <option value="PS">PS</option>
                         <option value="LIC">LIC</option>
                         <option value="HW">HW</option>
                         <option value="AMS">AMS</option>
-                      </select>;
+                      </select > ;
                   }
 
                   return(
