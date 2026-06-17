@@ -421,7 +421,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           </div>
           <div className="kpi">
             <div className="kpi-lbl">Hardware</div>
-            <div className="kpi-val" style={{color:"#E65100"}}>{fmtMYR(Math.abs(totHW))}</div>
+            <div className="kpi-val" style={{color:"#888780"}}>{fmtMYR(Math.abs(totHW))}</div>
             <div className="kpi-sub">{totNet?((totHW/totNet)*100).toFixed(1)+"% of total":""}</div>
           </div>
           <div className="kpi">
@@ -431,7 +431,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           </div>
           <div className="kpi">
             <div className="kpi-lbl">Uncategorised</div>
-            <div className="kpi-val" style={{color:"#888780"}}>{fmtMYR(Math.abs(totUnc))}</div>
+            <div className="kpi-val" style={{color:"#E24B4A"}}>{fmtMYR(Math.abs(totUnc))}</div>
             <div className="kpi-sub">{cntUnc} invoices</div>
           </div>
         </div>
