@@ -17,17 +17,21 @@ export default function AdjLog({ entity = "QM", entities = [] }) {
 
   useEffect(() => {
     if (!user) return;
-    getLog(entity || "QM", user.role, user.user_id)
+    getLog(entity || "QM", user.role, user.user_id,  fromDate, toDate)
       .then(r => setRows(r.data))
       .catch(() => setRows([]));
   }, [entity, user?.user_id]);
   const [type,setType]=useState("all");
   const [fEntity, setFEntity] = useState("all");
   const [tab,setTab]=useState("all");
+  const now=new Date();
+  const [fromDate,setFromDate]=useState(now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01");
+  const [toDate,setToDate]=useState(now.getFullYear()+"-12-31");
   const filtered=rows.filter(r=>
     (type==="all"||r.action_type===type||r.type===type) &&
     (tab==="all"||r.journal_type===tab||r.tab===tab) &&
-    (fEntity==="all"||r.entity===fEntity)
+    (fEntity==="all"||r.entity===fEntity) &&
+    (!r.ts||(r.ts>=fromDate&&r.ts<=toDate+"\uffff"))
   );
   return(
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",minHeight:0}}>
@@ -56,8 +60,8 @@ export default function AdjLog({ entity = "QM", entities = [] }) {
           <option value="all">All</option><option value="sales">Sales</option><option value="pur">Purchases</option>
         </select>
         <div className="f-div"/>
-        <span className="f-lbl">From</span><input type="date" className="f-date" defaultValue="2025-01-01"/>
-        <span className="f-lbl">To</span><input type="date" className="f-date" defaultValue="2025-12-31"/>
+        <span className="f-lbl">From</span><input type="date" className="f-date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/>
+        <span className="f-lbl">To</span><input type="date" className="f-date" value={toDate} onChange={e=>setToDate(e.target.value)}/>
       </div>
       <div className="content" style={{padding:0}}>
         <table style={{width:"100%",borderCollapse:"collapse"}}>
