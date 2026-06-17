@@ -170,13 +170,14 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
   const isLocked=d=>lockedPeriods.includes(d.slice(0,7));
 
+  // KPIs — use net_amount from API response
   let totNet=0,totPS=0,totLIC=0,totUnc=0,cntUnc=0;
   invoices.forEach(inv=>{
     const n=Number(inv.amount);totNet+=n;
     if(inv.splits&&inv.splits.length){
       inv.splits.forEach(s=>{
-        if(s.category==="PS")totPS+=Number(s.split_amount);
-        else if(s.category==="LIC")totLIC+=Number(s.split_amount);
+        if(s.category==="PS")totPS+=Number(s.net_amount);
+        else if(s.category==="LIC")totLIC+=Number(s.net_amount);
       });
     }else{
       const cat=inv.category||inv._cat||"";
@@ -241,10 +242,11 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     const total=lines.reduce((s,l)=>s+(parseFloat(l.amt)||0),0);
     if(Math.abs(total-invAmt)>=1){showToast("⚠ Amounts must sum to "+fmtMYR(invAmt));return;}
     try{
-      await saveSplits({source_key:sk,journal_type:tab==="sales"?"SALES":"PURCHASE",
+      const res=await saveSplits({source_key:sk,journal_type:tab==="sales"?"SALES":"PURCHASE",
         user:user?.user_id||"user",entity,
         splits:lines.map(l=>({category:l.cat,split_amount:parseFloat(l.amt)||0,
           start_date:l.sd||null,end_date:l.ed||null}))});
+      if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       showToast("✓ Split saved");
       setSplitState(p=>{const n={...p};delete n[sk];return n;});
       run();
@@ -252,22 +254,23 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   };
 
   const saveNoSplit=async(sk,invAmt)=>{
-  const rs=rowState[sk]||{};
-  if(!rs.sd||!rs.ed){showToast("⚠ Please enter Start Date and End Date");return;}
-  try{
-    await saveSplits({source_key:sk,
-      journal_type:tab==="sales"?"SALES":"PURCHASE",
-      user:user?.user_id||"user",entity,
-      splits:[{
-        category:    rs.cat||null,     // ← use rowState cat, not inv._cat
-        split_amount:parseFloat(invAmt)||0,
-        start_date:  rs.sd||null,
-        end_date:    rs.ed||null,
-        end_user:    rs.eu||null
-      }]});
-    showToast("✓ Saved");run();
-  }catch(e){showToast("⚠ "+e.message);}
-};
+    const rs=rowState[sk]||{};
+    if(!rs.sd||!rs.ed){showToast("⚠ Please enter Start Date and End Date");return;}
+    try{
+      const res=await saveSplits({source_key:sk,
+        journal_type:tab==="sales"?"SALES":"PURCHASE",
+        user:user?.user_id||"user",entity,
+        splits:[{
+          category:     rs.cat||null,
+          split_amount: parseFloat(invAmt)||0,
+          start_date:   rs.sd||null,
+          end_date:     rs.ed||null,
+          end_user:     rs.eu||null
+        }]});
+      if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
+      showToast("✓ Saved");run();
+    }catch(e){showToast("⚠ "+e.message);}
+  };
 
   const handleLock=async period=>{
     setLockModal(false);
@@ -303,7 +306,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       if(inv.splits&&inv.splits.length){
         return inv.splits.map(s=>[inv.trans_date,inv.acc_no,inv.de_acc_desc,inv.proj_no,
           inv.ref_no1,inv.ref_no2,inv.description,inv.home_dr,inv.home_cr,
-          s.split_amount,s.category||"—",s.end_user||"—",s.start_date||"—",s.end_date||"—",s.total_days||"—"]);
+          s.net_amount,s.category||"—",s.end_user||"—",s.start_date||"—",s.end_date||"—",s.total_days||"—"]);
       }
       return[[inv.trans_date,inv.acc_no,inv.de_acc_desc,inv.proj_no,
         inv.ref_no1,inv.ref_no2,inv.description,inv.home_dr,inv.home_cr,
@@ -417,7 +420,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           <strong>MFRS dates</strong> — enter Start Date and End Date on each line to enable automatic recognition.
         </div>
 
-        {/* ── Card — contains invoice table + footer only ── */}
         <div className="card">
           <div className="card-hdr">
             <div className="card-title">{noun} invoices · {periodLbl} · {entity}</div>
@@ -426,7 +428,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
               value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
 
-          {/* Invoice table scroll container */}
           <div style={{overflowX:"auto",overflowY:"visible",width:"100%"}}>
             <table style={{tableLayout:"fixed",borderCollapse:"collapse",minWidth:tableMinWidth}}>
               <thead>
@@ -447,7 +448,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   <StaticTh label="End Date"   minWidth={96}/>
                   <StaticTh label="Days"       minWidth={60} align="right"/>
                   <StaticTh label="Action"     minWidth={120}/>
-                  {/* Filler — removes blank space after Action column */}
                   <th style={{width:"100%",background:"#fafaf8",borderBottom:"1px solid #e8e7e0"}}/>
                 </tr>
               </thead>
@@ -460,16 +460,15 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   const isEx=expanded[inv.source_key];
 
                   let typeBdg;
-                  const savedCat = inv.category || inv._cat || getRow(inv.source_key,"cat","");
+                  const savedCat=inv.category||getRow(inv.source_key,"cat","");
                   if(hasSplit){
                     typeBdg=<span className="bdg bdg-split" style={{cursor:"pointer"}}
                       onClick={()=>toggleExpand(inv.source_key)}>
                       Split {isEx?"▲":"▼"}
                     </span>;
-                    
-                  }else if(inv._cat==="PS"){
+                  }else if(savedCat==="PS"){
                     typeBdg=<span className="bdg bdg-ps">PS</span>;
-                  }else if(inv._cat==="LIC"){
+                  }else if(savedCat==="LIC"){
                     typeBdg=<span className="bdg bdg-lic">LIC</span>;
                   }else{
                     typeBdg=locked
@@ -482,7 +481,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         <option value="LIC">LIC</option>
                         <option value="HW">HW</option>
                         <option value="AMS">AMS</option>
-                      </select > ;
+                      </select>;
                   }
 
                   return(
@@ -552,7 +551,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 </span>
                               :<span/>}
                         </td>
-                        <td/>{/* filler */}
+                        <td/>
                       </tr>
 
                       {hasSplit&&isEx&&inv.splits.map((line,li)=>(
@@ -574,7 +573,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                           </td>
                           <td/>
                           <td className="tr mono" style={{color:line.category==="LIC"?"#3C3489":"#0C447C"}}>
-                            {fmtMYR(Number(line.split_amount))}
+                            {fmtMYR(Number(line.net_amount))}
                           </td>
                           <td><span className={line.category==="LIC"?"bdg bdg-lic":"bdg bdg-ps"}>{line.category||"—"}</span></td>
                           <td/>
@@ -582,14 +581,14 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                           <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td className="tr mono muted">{line.total_days||"—"}</td>
                           <td/>
-                          <td/>{/* filler */}
+                          <td/>
                         </tr>
                       ))}
                       {hasSplit&&isEx&&(
                         <tr className={"row-addsplit"+(locked?" row-addsplit-locked":"")}>
                           <td colSpan={colSpanFull+1} style={{textAlign:"right"}}>
                             <span className="val-ok">
-                              ✓ {inv.splits.map(l=>fmtMYR(Number(l.split_amount))).join(" + ")} = {fmtMYR(amt)}
+                              ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
                           </td>
                         </tr>
@@ -635,7 +634,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             <td>
                               <button className="btn-del" onClick={()=>removeSplitLine(inv.source_key,li)}>✕</button>
                             </td>
-                            <td/>{/* filler */}
+                            <td/>
                           </tr>
                         );
                       })}
@@ -655,7 +654,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               <button className="btn-save" onClick={()=>saveSplit_(inv.source_key,amt)} style={{marginRight:4}}>Save split</button>
                               <button className="btn-del" onClick={()=>setSplitState(p=>{const n={...p};delete n[inv.source_key];return n;})}>Cancel</button>
                             </td>
-                            <td/>{/* filler */}
+                            <td/>
                           </tr>
                         );
                       })()}
@@ -674,9 +673,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                 )}
               </tbody>
             </table>
-          </div>{/* end invoice table scroll container */}
+          </div>
 
-          {/* Table footer — stays inside card, above new line form */}
           <div className="tbl-foot">
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="foot-dot" style={{background:"#185FA5"}}/>
@@ -697,13 +695,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
               </button>
             </div>
           </div>
-        </div>{/* end card */}
+        </div>
 
-        {/* ── New deferred line form ────────────────────────────────────────
-            Outside the card — appears below card footer (screenshot 1 design).
-            Has its own scroll container with same minWidth as invoice table
-            so it stays width-aligned with the card on all screen sizes.
-        ───────────────────────────────────────────────────────────────────── */}
         {newLineOpen&&(
           <div style={{overflowX:"auto",overflowY:"visible",width:"100%",marginTop:0}}>
             <table style={{borderCollapse:"collapse",minWidth:tableMinWidth}}>
@@ -762,14 +755,14 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                     <button className="btn-save" onClick={handleNewLine} style={{marginRight:4}}>Save</button>
                     <button className="btn-del" onClick={()=>setNewLineOpen(false)}>✕</button>
                   </td>
-                  <td/>{/* filler — matches invoice table filler col */}
+                  <td/>
                 </tr>
               </tbody>
             </table>
           </div>
         )}
 
-      </div>{/* end content */}
+      </div>
 
       <LockModal open={lockModal} onClose={()=>setLockModal(false)} onConfirm={handleLock}/>
       <UnlockModal open={unlockModal.open} invNo={unlockModal.invNo}
