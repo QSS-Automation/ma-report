@@ -576,7 +576,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             {fmtMYR(Number(line.net_amount))}
                           </td>
                           <td><span className={line.category==="LIC"?"bdg bdg-lic":"bdg bdg-ps"}>{line.category||"—"}</span></td>
-                          <td/>
+                          
                           <td><input type="date" className="f-date" defaultValue={line.start_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td className="tr mono muted">{line.total_days||"—"}</td>
@@ -620,7 +620,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 placeholder="0"/>
                             </td>
                             <td><span className={line.cat==="LIC"?"bdg bdg-lic":"bdg bdg-ps"}>{line.cat}</span></td>
-                            <td/>
+                          
                             <td>
                               <input type="date" className="f-date" value={line.sd}
                                 onChange={e=>updateSplitLine(inv.source_key,li,"sd",e.target.value)}
