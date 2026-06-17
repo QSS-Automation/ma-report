@@ -20,7 +20,7 @@ export default function AdjLog({ entity = "QM", entities = [] }) {
     getLog(entity || "QM", user.role, user.user_id,  fromDate, toDate)
       .then(r => setRows(r.data))
       .catch(() => setRows([]));
-  }, [entity, user?.user_id]);
+  }, [entity, user?.user_id,fromDate, toDate]);
   const [type,setType]=useState("all");
   const [fEntity, setFEntity] = useState("all");
   const [tab,setTab]=useState("all");
