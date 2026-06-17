@@ -14,3 +14,8 @@ export const msalConfig = {
 export const loginRequest = {
   scopes: ["User.Read"],
 };
+
+// ← Add this — Teams SSO scope
+export const teamsLoginRequest = {
+  scopes: [`api://${process.env.REACT_APP_MS_CLIENT_ID}/access_as_user`],
+};
