@@ -556,7 +556,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
                       {hasSplit&&isEx&&inv.splits.map((line,li)=>(
                         <tr key={"s"+li} className={"row-split"+(locked?" row-split-locked":"")}>
-                          <td colSpan={isSales?4:5}/>
+                          <td colSpan={isSales?5:6}/>
                           <td colSpan={2}>
                             <div style={{display:"flex",alignItems:"center",gap:6,paddingLeft:12}}>
                               <div style={{width:2,height:34,background:locked?"#F09595":"#85B7EB",
@@ -591,6 +591,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
                           </td>
+                          <td colSpan={2}/>
                         </tr>
                       )}
 
@@ -599,7 +600,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                           ?Math.round((new Date(line.ed)-new Date(line.sd))/86400000)+1:"";
                         return(
                           <tr key={"d"+li} className="row-split">
-                            <td colSpan={isSales?4:5}/>
+                            <td colSpan={isSales?5:6}/>
                             <td colSpan={2}>
                               <div style={{display:"flex",alignItems:"center",gap:6,paddingLeft:12}}>
                                 <div style={{width:2,height:34,background:"#85B7EB",flexShrink:0,marginRight:6,borderRadius:1}}/>
