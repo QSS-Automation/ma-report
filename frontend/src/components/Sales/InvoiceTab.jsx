@@ -580,8 +580,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                           <td><input type="date" className="f-date" defaultValue={line.start_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td className="tr mono muted">{line.total_days||"—"}</td>
-                          <td/>
-                          <td/>
+                          <td colSpan={2}/>
                         </tr>
                       ))}
                       {hasSplit&&isEx&&(
