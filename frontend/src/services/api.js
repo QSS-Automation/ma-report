@@ -19,5 +19,6 @@ export const getTasks       = (entity, role, userId)   => API.get("/api/tasks", 
 export const createTask     = (data)                   => API.post("/api/tasks",                  data);
 export const updateTask     = (id, data)               => API.patch(`/api/tasks/${id}`,           data);
 export const getOrderList   = (entity)                 => API.get("/api/order-list", { params: { entity } });
+export const unlockSplit = (data) => API.post("/api/mfrs/unlock", data);
 
 export default API;
