@@ -591,7 +591,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
                           </td>
-                          <td colSpan={2}/>
+                          <td/>
                         </tr>
                       )}
 
