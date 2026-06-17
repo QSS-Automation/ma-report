@@ -472,7 +472,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   }else if(singleSplit){
                     // Single split — show category badge inline
                     typeBdg=<span className={singleSplit.category==="LIC"?"bdg bdg-lic":
-                      singleSplit.category==="PS"?"bdg bdg-ps":"bdg"}>
+                      singleSplit.category==="PS"?"bdg bdg-ps": singleSplit.category==="HW"?"bdg bdg-hw": singleSplit.category==="AMS"?"bdg bdg-ams":"bdg"}>
                       {singleSplit.category||"—"}
                     </span>;
                   }else if(savedCat==="PS"){
@@ -592,7 +592,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               <div style={{width:2,height:34,background:locked?"#F09595":"#85B7EB",
                                   flexShrink:0,marginRight:6,borderRadius:1}}/>
                               <div>
-                                <span className={line.category==="LIC"?"bdg bdg-lic":"bdg bdg-ps"}>
+                                <span className={line.category==="LIC"?"bdg bdg-lic": line-category==="PS"?"bdg bdg-ps":line.category==="HW"?"bdg bdg-hw": line.category==="AMS"?"bdg bdg-ams":"bdg"}>
                                   {line.category||"—"}
                                 </span>
                                 <div style={{fontSize:9,color:locked?"#c0392b":"#888780",marginTop:3}}>
