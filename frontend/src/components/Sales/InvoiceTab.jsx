@@ -12,7 +12,6 @@ import {useAuth} from "../../context/AuthContext";
 
 const FETCH={sales:getSales,pur:getPurchases};
 
-// ── Category badge helper ─────────────────────────────────────────────────
 function CatBadge({cat}){
   if(cat==="PS")  return <span className="bdg bdg-ps">PS</span>;
   if(cat==="LIC") return <span className="bdg bdg-lic">LIC</span>;
@@ -160,6 +159,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [splitState,setSplitState]=useState({});
   const [expanded,setExpanded]=useState({});
   const [rowState,setRowState]=useState({});
+  const [editState,setEditState]=useState({});  // ← inline edit state
   const newLineRef=useRef({});
 
   useEffect(()=>{setInvoices([]);},[entity]);
@@ -167,6 +167,29 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const toggleExpand=sk=>setExpanded(p=>({...p,[sk]:!p[sk]}));
   const updateRow=(sk,key,val)=>setRowState(p=>({...p,[sk]:{...p[sk],[key]:val}}));
   const getRow=(sk,key,fallback="")=>rowState[sk]?.[key]??fallback;
+
+  // ── Inline edit helpers ────────────────────────────────────────────────
+  // Single split — pre-fill edit state from existing split
+  const startEdit=(sk,split)=>setEditState(p=>({...p,[sk]:{
+    cat: split.category||"",
+    eu:  split.end_user||"",
+    sd:  split.start_date||"",
+    ed:  split.end_date||"",
+  }}));
+
+  // Multi-split — pre-fill draft lines from existing splits
+  const startMultiEdit=(sk,splits)=>{
+    setSplitState(p=>({...p,[sk]:{lines:splits.map(s=>({
+      cat: s.category||"PS",
+      amt: String(s.net_amount||""),
+      sd:  s.start_date||"",
+      ed:  s.end_date||"",
+    }))}}));
+    setExpanded(p=>({...p,[sk]:true})); // ensure expanded
+  };
+
+  const cancelEdit=sk=>setEditState(p=>{const n={...p};delete n[sk];return n;});
+  const updateEdit=(sk,key,val)=>setEditState(p=>({...p,[sk]:{...p[sk],[key]:val}}));
 
   const run=useCallback(async()=>{
     setLoading(true);
@@ -179,7 +202,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
   const isLocked=d=>lockedPeriods.includes(d.slice(0,7));
 
-  // ── KPIs — all 4 categories + uncategorised ────────────────────────────
   let totNet=0,totPS=0,totLIC=0,totHW=0,totAMS=0,totUnc=0,cntUnc=0;
   invoices.forEach(inv=>{
     const n=Number(inv.amount);totNet+=n;
@@ -285,22 +307,28 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     }catch(e){showToast("⚠ "+e.message);}
   };
 
-  const resetSplit=async(sk)=>{
-    if(!window.confirm("Reset this entry? Dates and category will be cleared.")) return;
+  // ── Save inline edit for single split ─────────────────────────────────
+  const saveEdit=async(sk,invAmt)=>{
+    const es=editState[sk]||{};
+    if(!es.sd||!es.ed){showToast("⚠ Please enter Start Date and End Date");return;}
     try{
-      const res=await saveSplits({
-        source_key:  sk,
+      const res=await saveSplits({source_key:sk,
         journal_type:tab==="sales"?"SALES":"PURCHASE",
-        user:        user?.user_id||"user",
-        entity,
-        splits:[]
-      });
+        user:user?.user_id||"user",entity,
+        splits:[{
+          category:     es.cat||null,
+          split_amount: parseFloat(invAmt)||0,
+          start_date:   es.sd||null,
+          end_date:     es.ed||null,
+          end_user:     es.eu||null
+        }]});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
-      showToast("✓ Reset. You can now edit.");
+      cancelEdit(sk);
+      showToast("✓ Updated.");
       run();
     }catch(e){showToast("⚠ "+e.message);}
   };
-  
+
   const handleLock=async period=>{
     setLockModal(false);
     try{
@@ -417,7 +445,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         </div>
       )}
 
-      {/* ── KPI cards ── */}
       <div style={{padding:"14px 18px",flexShrink:0,background:"#fff",borderBottom:"1px solid #e8e7e0"}}>
         <div className="kpi-row" style={{marginBottom:0}}>
           <div className="kpi">
@@ -498,9 +525,11 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   const isMultiSplit=inv.splits&&inv.splits.length>1;
                   const singleSplit=hasSplit&&!isMultiSplit?inv.splits[0]:null;
                   const inDraft=splitState[inv.source_key];
+                  const inEdit=editState[inv.source_key];
                   const hdr=Number(inv.home_dr),hcr=Number(inv.home_cr),amt=Number(inv.amount);
                   const isEx=expanded[inv.source_key];
 
+                  // ── Type badge ───────────────────────────────────────
                   let typeBdg;
                   const savedCat=inv.category||getRow(inv.source_key,"cat","");
                   if(isMultiSplit){
@@ -508,6 +537,17 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                       onClick={()=>toggleExpand(inv.source_key)}>
                       Split {isEx?"▲":"▼"}
                     </span>;
+                  }else if(inEdit){
+                    // Single split in edit mode — show category select pre-filled
+                    typeBdg=<select className="cat-sel"
+                      value={inEdit.cat}
+                      onChange={e=>updateEdit(inv.source_key,"cat",e.target.value)}>
+                      <option value="">— Assign</option>
+                      <option value="PS">PS</option>
+                      <option value="LIC">LIC</option>
+                      <option value="HW">HW</option>
+                      <option value="AMS">AMS</option>
+                    </select>;
                   }else if(singleSplit){
                     typeBdg=<CatBadge cat={singleSplit.category}/>;
                   }else if(savedCat){
@@ -528,7 +568,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
                   return(
                     <React.Fragment key={inv.source_key}>
-                      <tr className={"row-hover"+(locked?" row-locked":"")}>
+                      <tr className={"row-hover"+(locked?" row-locked":"")+(inEdit?" row-split":"")}>
                         <td className="muted">{fmtDateShort(inv.trans_date)}</td>
                         <td className="mono muted" style={{fontSize:11}}>{inv.acc_no||"—"}</td>
                         <td className="muted" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -548,66 +588,106 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         <td className="tr mono muted">{fmtMYR(hcr)}</td>
                         <td className="tr mono">{fmtMYR(amt)}</td>
                         <td>{typeBdg}</td>
+
+                        {/* End User */}
                         <td>
-                          {singleSplit
-                            ?<span style={{fontSize:11,color:"#5f5e5a"}}>{singleSplit.end_user||"—"}</span>
-                            :hasSplit
-                              ?<span className="muted">—</span>
-                              :<input type="text" className="f-date"
-                                  value={getRow(inv.source_key,"eu")}
-                                  readOnly={locked}
-                                  placeholder="End user"
-                                  onChange={e=>updateRow(inv.source_key,"eu",e.target.value)}
-                                  style={{width:90,fontSize:11,padding:"3px 5px"}}/>}
+                          {inEdit
+                            ?<input type="text" className="f-date"
+                                value={inEdit.eu}
+                                placeholder="End user"
+                                onChange={e=>updateEdit(inv.source_key,"eu",e.target.value)}
+                                style={{width:90,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                            :singleSplit
+                              ?<span style={{fontSize:11,color:"#5f5e5a"}}>{singleSplit.end_user||"—"}</span>
+                              :hasSplit
+                                ?<span className="muted">—</span>
+                                :<input type="text" className="f-date"
+                                    value={getRow(inv.source_key,"eu")}
+                                    readOnly={locked}
+                                    placeholder="End user"
+                                    onChange={e=>updateRow(inv.source_key,"eu",e.target.value)}
+                                    style={{width:90,fontSize:11,padding:"3px 5px"}}/>}
                         </td>
+
+                        {/* Start Date */}
                         <td>
-                          {singleSplit
-                            ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.start_date)||"—"}</span>
-                            :<input type="date" className="f-date"
-                              value={getRow(inv.source_key,"sd")}
-                              readOnly={locked||isMultiSplit}
-                              onChange={e=>updateRow(inv.source_key,"sd",e.target.value)}
-                              style={{width:96,fontSize:11,padding:"3px 5px",
-                                      borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
+                          {inEdit
+                            ?<input type="date" className="f-date"
+                                value={inEdit.sd}
+                                onChange={e=>updateEdit(inv.source_key,"sd",e.target.value)}
+                                style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                            :singleSplit
+                              ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.start_date)||"—"}</span>
+                              :<input type="date" className="f-date"
+                                value={getRow(inv.source_key,"sd")}
+                                readOnly={locked||isMultiSplit}
+                                onChange={e=>updateRow(inv.source_key,"sd",e.target.value)}
+                                style={{width:96,fontSize:11,padding:"3px 5px",
+                                        borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
                         </td>
+
+                        {/* End Date */}
                         <td>
-                          {singleSplit
-                            ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.end_date)||"—"}</span>
-                            :<input type="date" className="f-date"
-                              value={getRow(inv.source_key,"ed")}
-                              readOnly={locked||isMultiSplit}
-                              onChange={e=>updateRow(inv.source_key,"ed",e.target.value)}
-                              style={{width:96,fontSize:11,padding:"3px 5px",
-                                      borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
+                          {inEdit
+                            ?<input type="date" className="f-date"
+                                value={inEdit.ed}
+                                onChange={e=>updateEdit(inv.source_key,"ed",e.target.value)}
+                                style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                            :singleSplit
+                              ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.end_date)||"—"}</span>
+                              :<input type="date" className="f-date"
+                                value={getRow(inv.source_key,"ed")}
+                                readOnly={locked||isMultiSplit}
+                                onChange={e=>updateRow(inv.source_key,"ed",e.target.value)}
+                                style={{width:96,fontSize:11,padding:"3px 5px",
+                                        borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
                         </td>
+
+                        {/* Days */}
                         <td className="tr mono muted">
-                          {singleSplit
-                            ?singleSplit.total_days||"—"
-                            :(()=>{
-                              const sd=getRow(inv.source_key,"sd"),ed=getRow(inv.source_key,"ed");
+                          {inEdit
+                            ?(()=>{
+                              const sd=inEdit.sd,ed=inEdit.ed;
                               return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
-                            })()}
+                            })()
+                            :singleSplit
+                              ?singleSplit.total_days||"—"
+                              :(()=>{
+                                const sd=getRow(inv.source_key,"sd"),ed=getRow(inv.source_key,"ed");
+                                return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
+                              })()}
                         </td>
+
+                        {/* Action */}
                         <td style={{whiteSpace:"nowrap"}}>
                           {locked
                             ?<button className="btn-unlock-req"
                                 onClick={()=>setUnlockModal({open:true,invNo:inv.ref_no1||"#"+inv.source_key})}>
                                 🔓 Request unlock
                               </button>
-                            :singleSplit
-                              ?singleSplit.is_locked
-                                ?<span style={{fontSize:10,color:"#888780"}}>🔒 Locked</span>
-                                :<button className="btn-split" onClick={()=>resetSplit(inv.source_key)}>✎ Edit/Update</button>
-                              :!hasSplit&&!inDraft
-                                ?<span style={{display:"flex",gap:4}}>
-                                    <button className="btn-save" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</button>
-                                    <button className="btn-split" onClick={()=>openSplit(inv.source_key)}>＋ Split</button>
-                                  </span>
-                                :<span/>}
+                            :inEdit
+                              // Single split inline edit — Update / Cancel
+                              ?<span style={{display:"flex",gap:4}}>
+                                  <button className="btn-save" onClick={()=>saveEdit(inv.source_key,amt)}>Update</button>
+                                  <button className="btn-del" onClick={()=>cancelEdit(inv.source_key)}>✕</button>
+                                </span>
+                              :singleSplit
+                                // Single split saved — Edit button
+                                ?singleSplit.is_locked
+                                  ?<span style={{fontSize:10,color:"#888780"}}>🔒 Locked</span>
+                                  :<button className="btn-split" onClick={()=>startEdit(inv.source_key,singleSplit)}>✎ Edit</button>
+                                :!hasSplit&&!inDraft
+                                  // No split yet — Save / Split buttons
+                                  ?<span style={{display:"flex",gap:4}}>
+                                      <button className="btn-save" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</button>
+                                      <button className="btn-split" onClick={()=>openSplit(inv.source_key)}>＋ Split</button>
+                                    </span>
+                                  :<span/>}
                         </td>
                         <td/>
                       </tr>
 
+                      {/* ── Existing multi-split rows ── */}
                       {isMultiSplit&&isEx&&inv.splits.map((line,li)=>(
                         <tr key={"s"+li} className={"row-split"+(locked?" row-split-locked":"")}>
                           <td colSpan={isSales?5:6}/>
@@ -641,12 +721,17 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
                             &nbsp;&nbsp;
-                            {!locked&&<button className="btn-split" onClick={()=>resetSplit(inv.source_key)}>✎ Edit/Update</button>}
+                            {/* Multi-split Edit — pre-fills draft with existing values */}
+                            {!locked&&<button className="btn-split"
+                              onClick={()=>startMultiEdit(inv.source_key,inv.splits)}>
+                              ✎ Edit
+                            </button>}
                           </td>
                           <td colSpan={3}/>
                         </tr>
                       )}
 
+                      {/* ── Draft split UI (new split or editing multi-split) ── */}
                       {inDraft&&inDraft.lines.map((line,li)=>{
                         const tDays=line.sd&&line.ed
                           ?Math.round((new Date(line.ed)-new Date(line.sd))/86400000)+1:"";
@@ -727,7 +812,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
             </table>
           </div>
 
-          {/* ── Table footer ── */}
           <div className="tbl-foot">
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <div className="foot-dot" style={{background:"#185FA5"}}/>
