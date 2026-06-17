@@ -586,7 +586,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                       ))}
                       {hasSplit&&isEx&&(
                         <tr className={"row-addsplit"+(locked?" row-addsplit-locked":"")}>
-                          <td colSpan={colSpanFull+1} style={{textAlign:"right"}}>
+                          <td colSpan={colSpanFull} style={{textAlign:"right"}}>
                             <span className="val-ok">
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
