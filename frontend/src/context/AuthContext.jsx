@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { useMsal } from "@azure/msal-react";
 import * as microsoftTeams from "@microsoft/teams-js";
 import API from "../services/api";
-import { loginRequest } from "../auth/msalConfig";
+import { loginRequest, teamsLoginRequest } from "../auth/msalConfig";
 
 const AuthContext = createContext(null);
 
@@ -21,7 +21,7 @@ export function AuthProvider({ children }) {
     // ── Teams iframe SSO ──────────────────────────────────────────
     if(isInTeams() && accounts.length === 0){
       microsoftTeams.app.initialize()
-        .then(() => microsoftTeams.authentication.getAuthToken())
+        .then(() => microsoftTeams.authentication.getAuthToken({resources: [`api://${process.env.REACT_APP_MS_CLIENT_ID}`]}))
         .then(token => {
           // Decode JWT payload to get user info
           const payload = JSON.parse(atob(token.split(".")[1]));
