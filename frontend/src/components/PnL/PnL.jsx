@@ -84,7 +84,13 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
           P&amp;L Statement
           <span className="pg-badge">{entity} · {mp.fromLabel}–{mp.toLabel}</span>
         </div>
-        <div className="pg-actions" onClick={exportCSV}><button className="pg-btn">Export CSV</button></div>
+        <div className="pg-actions">
+        <button className="pg-btn" onClick={rebuild} disabled={rebuilding}
+          style={{background:rebuilding?"#888780":"#6B7280", marginRight:6, color:"white"}}>
+          {rebuilding?"Rebuilding…":"Refresh"}
+        </button>
+        <button className="pg-btn" onClick={exportCSV}>Export CSV</button>
+      </div>
       </div>
 
       <div className="filter">
@@ -107,8 +113,7 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
           </button>
         ))}
         <button className="run" onClick={run} disabled={loading}>{loading?"Loading…":"Run Report"}</button>
-        <button className="run" onClick={rebuild} disabled={rebuilding}style={{ background: rebuilding ? "#888780" : "#6B7280", marginLeft: 6 }}> {rebuilding ? "Rebuilding…" : "Refresh"}
-</button>
+      
       </div>
 
       <div style={{padding:"12px 18px 0",flexShrink:0,background:"#fff",borderBottom:"1px solid #e8e7e0"}}>
