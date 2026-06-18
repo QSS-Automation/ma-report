@@ -25,7 +25,7 @@ export default function Login() {
     import("@microsoft/teams-js").then(({ app, authentication }) => {
       app.initialize()
         .then(() => authentication.getAuthToken({
-          resources: [`api://${process.env.REACT_APP_MS_CLIENT_ID}`]
+          resources: [`api://delightful-bay-0d1d05610.7.azurestaticapps.net/${process.env.REACT_APP_MS_CLIENT_ID}`]
         }))
         .then(token => {
           // Decode token to get user email
