@@ -17,5 +17,5 @@ export const loginRequest = {
 
 // ← Add this — Teams SSO scope
 export const teamsLoginRequest = {
-  scopes: [`api://${process.env.REACT_APP_MS_CLIENT_ID}/access_as_user`],
+  scopes: [`api://delightful-bay-0d1d05610.7.azurestaticapps.net/${process.env.REACT_APP_MS_CLIENT_ID}/access_as_user`],
 };
