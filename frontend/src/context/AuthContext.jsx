@@ -35,9 +35,14 @@ export function AuthProvider({ children }) {
             }))
             .finally(() => setLoading(false));
         })
+        // After
         .catch(() => {
-          // Teams SSO failed — fallback to redirect
-          instance.loginRedirect(loginRequest).catch(() => setLoading(false));
+          // Teams SSO failed — do NOT redirect in iframe
+          if(window.parent === window){
+            instance.loginRedirect(loginRequest).catch(() => setLoading(false));
+          } else {
+            setLoading(false);
+          }
         });
       return;
     }
