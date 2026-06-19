@@ -347,8 +347,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       await saveManualLine({journal_type:tab==="sales"?"SALES":"PURCHASE",
         trans_date:f.date||new Date().toISOString().slice(0,10),acc_no:f.accNo||"",
         de_acc_desc:f.deAcc||"",proj_no:f.proj||"",ref_no1:f.ref||"",
-        description:f.desc||"",home_dr:parseFloat(f.hdr)||0,home_cr:parseFloat(f.hcr)||0,
-        split_amount:parseFloat(f.hdr)||0,category:f.cat||null,end_user:f.eu||null,
+        description:f.desc||"",home_dr:parseFloat((f.hdr||"").replace(/,/g,""))||0, home_cr:parseFloat((f.hcr||"").replace(/,/g,""))||0,
+        split_amount:parseFloat((f.hdr||"").replace(/,/g,""))||0,category:f.cat||null,end_user:f.eu||null,
         start_date:f.sd||null,end_date:f.ed||null,remark:f.rm||"",
         user:user?.user_id||"user",entity});
       setNewLineOpen(false);showToast("✓ New deferred line saved");run();
