@@ -69,7 +69,7 @@ const NAV = [
         icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6h14M5 6v7M11 6v7"/></svg>,
       },
     ],
-  }, 
+  },
 ];
 
 export default function App() {
@@ -82,9 +82,11 @@ export default function App() {
   const [entity,       setEntity]       = useState("QM");
   const [entities,     setEntities]     = useState([{ entity_code: "QM", display_name: "Quandatics Malaysia" }]);
 
+  const isReady = isAuthenticated || !!user;
+
   // Fetch config refresh label
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isReady) return;
     getConfig(entity)
       .then((r) => {
         const ts = r.data?.staging_refreshed_at;
@@ -94,23 +96,23 @@ export default function App() {
         }
       })
       .catch(() => {});
-  }, [isAuthenticated, entity]);
+  }, [isReady, entity]);
 
   // Fetch available entities
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isReady) return;
     getEntities()
       .then(r => { if (r.data?.length) setEntities(r.data); })
       .catch(() => {});
-  }, [isAuthenticated]);
+  }, [isReady]);
 
   // ── Early returns AFTER all hooks ──
-  if (!isAuthenticated) return <Login />;
   if (loading) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", color:"#888780", fontSize:13 }}>
       Loading…
     </div>
   );
+  if (!isAuthenticated && !user) return <Login />;
 
   const handleNav = (id) => {
     if (id === "mfrs-sales") { setTab("mfrs"); setMfrsSub("sales"); }
@@ -132,8 +134,6 @@ export default function App() {
             <div className="sb-tag">Management Accounts</div>
           </div>
         </div>
-
-       
 
         {NAV.map((group) => (
           <React.Fragment key={group.section}>
@@ -170,13 +170,13 @@ export default function App() {
 
       {/* ── Main content ── */}
       <div className="main">
-        <div style={{ display: tab==="pnl"   ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><PnL       entity={entity} setEntity={setEntity} entities={entities} /></div>
-        <div style={{ display: tab==="tb"    ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><BS        entity={entity} setEntity={setEntity} entities={entities} /></div>
-        <div style={{ display: tab==="sales" ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Sales     entity={entity} setEntity={setEntity} entities={entities} /></div>
-        <div style={{ display: tab==="pur"   ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Purchases entity={entity} setEntity={setEntity} entities={entities} /></div>
-        <div style={{ display: tab==="mfrs"  ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><MFRS      entity={entity} setEntity={setEntity} entities={entities} defaultSub={mfrsSub} /></div>
-        <div style={{ display: tab==="adjtask" ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><AdjTasks  entity={entity} entities={entities} /></div>
-        <div style={{ display: tab==="adjlog"  ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Log       entity={entity} entities={entities} /></div>
+        <div style={{ display: tab==="pnl"        ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><PnL          entity={entity} setEntity={setEntity} entities={entities} /></div>
+        <div style={{ display: tab==="tb"         ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><BS           entity={entity} setEntity={setEntity} entities={entities} /></div>
+        <div style={{ display: tab==="sales"      ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Sales        entity={entity} setEntity={setEntity} entities={entities} /></div>
+        <div style={{ display: tab==="pur"        ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Purchases    entity={entity} setEntity={setEntity} entities={entities} /></div>
+        <div style={{ display: tab==="mfrs"       ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><MFRS         entity={entity} setEntity={setEntity} entities={entities} defaultSub={mfrsSub} /></div>
+        <div style={{ display: tab==="adjtask"    ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><AdjTasks     entity={entity} entities={entities} /></div>
+        <div style={{ display: tab==="adjlog"     ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Log          entity={entity} entities={entities} /></div>
         <div style={{ display: tab==="order-list" ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><OrderListTab entity={entity} setEntity={setEntity} entities={entities} /></div>
       </div>
 
