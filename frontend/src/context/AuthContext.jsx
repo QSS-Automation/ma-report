@@ -21,7 +21,7 @@ export function AuthProvider({ children }) {
     // ── Teams iframe SSO ──────────────────────────────────────────
     if(isInTeams() && accounts.length === 0){
       microsoftTeams.app.initialize()
-        .then(() => microsoftTeams.authentication.getAuthToken({resources: [`api://delightful-bay-0d1d05610.7.azurestaticapps.net/${process.env.REACT_APP_MS_CLIENT_ID}`]}))
+        .then(() => microsoftTeams.authentication.getAuthToken())
         .then(token => {
           // Decode JWT payload to get user info
           const payload = JSON.parse(atob(token.split(".")[1]));
