@@ -7,7 +7,7 @@ export const msalConfig = {
   },
   cache: {
     cacheLocation:          "sessionStorage",  // don't use localStorage
-    storeAuthStateInCookie: false,
+    storeAuthStateInCookie: true,
   },
 };
 
