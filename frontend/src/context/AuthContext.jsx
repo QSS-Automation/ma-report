@@ -17,43 +17,44 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-
-    // ── Teams iframe SSO ──────────────────────────────────────────
+  
+    // ── Teams — check sessionStorage first ───────────────────
+    const cached = sessionStorage.getItem("teams_user");
+    if(cached){
+      setUser(JSON.parse(cached));
+      setLoading(false);
+      return;
+    }
+  
+    // ── Teams SSO ─────────────────────────────────────────────
     if(isInTeams() && accounts.length === 0){
       microsoftTeams.app.initialize()
         .then(() => microsoftTeams.authentication.getAuthToken())
         .then(token => {
-          // Decode JWT payload to get user info
           const payload = JSON.parse(atob(token.split(".")[1]));
           const userId = payload.preferred_username || payload.upn || payload.email || "";
-          API.get("/api/auth/me", { params: { user_id: userId } })
-            .then(r => setUser(r.data))
-            .catch(() => setUser({
-              user_id:      userId,
-              display_name: payload.name || userId,
-              role:         "staff"
-            }))
-            .finally(() => setLoading(false));
+          return API.get("/api/auth/me", { params: { user_id: userId } });
         })
-        // After
-        .catch(() => {
-          // Teams SSO failed — do NOT redirect in iframe
-          if(window.parent === window){
-            instance.loginRedirect(loginRequest).catch(() => setLoading(false));
-          } else {
-            setLoading(false);
-          }
+        .then(r => {
+          // Store in sessionStorage — persists across re-renders
+          sessionStorage.setItem("teams_user", JSON.stringify(r.data));
+          setUser(r.data);
+          setLoading(false);
+        })
+        .catch(e => {
+          console.error("[Auth] Teams SSO failed:", e);
+          setLoading(false);
         });
       return;
     }
-
-    // ── Normal browser MSAL flow ──────────────────────────────────
+  
+    // ── Normal browser MSAL flow ──────────────────────────────
     if(accounts.length === 0){
       instance.ssoSilent(loginRequest)
         .catch(() => setLoading(false));
       return;
     }
-
+  
     if(accounts.length > 0){
       API.get("/api/auth/me", { params: { user_id: accounts[0].username } })
         .then(r => setUser(r.data))
