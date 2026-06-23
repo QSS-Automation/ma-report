@@ -25,20 +25,25 @@ export default function Login() {
     import("@microsoft/teams-js").then(({ app, authentication }) => {
       app.initialize()
         .then(() => authentication.getAuthToken())
-        .then(token => {
-          // Decode token to get user email
+        .then(async token => {
           const payload = JSON.parse(atob(token.split(".")[1]));
           const userId = payload.preferred_username || payload.upn || payload.email || "";
-          // Load user from backend
+        
+          // Try to establish MSAL session silently
+          try {
+            await instance.ssoSilent({ ...loginRequest, loginHint: userId });
+          } catch(e) {
+            console.log("[Login] ssoSilent skipped:", e.message);
+          }
+        
           return API.get("/api/auth/me", { params: { user_id: userId } });
         })
         .then(() => {
-          // Auth successful — page will re-render via AuthContext
           setLoading(false);
         })
         .catch(e => {
           console.error("[Login] Teams SSO failed:", e);
-          setError("SSO failed: "+(e?.message || e?.errorCode || e?.error || String(e)));  // ← show full error
+          setError("SSO failed: "+(e?.message || e?.errorCode || e?.error || String(e)));
           setLoading(false);
         });
     }).catch(e => {
