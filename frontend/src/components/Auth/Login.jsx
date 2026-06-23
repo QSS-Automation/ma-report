@@ -40,7 +40,7 @@ export default function Login() {
         })
         .catch(e => {
           console.error("[Login] Teams SSO failed:", e);
-          setError("Teams sign-in failed: "+e.message);
+          setError("SSO failed: "+JSON.stringify(e));  // ← show full error
           setLoading(false);
         });
     }).catch(e => {
