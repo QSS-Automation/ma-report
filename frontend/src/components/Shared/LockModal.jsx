@@ -4,7 +4,7 @@ export default function LockModal({open,onClose,onConfirm}){
   const [period,setPeriod]=useState("");
   if(!open)return null;
   const now=new Date(); const opts=[];
-  for(let i=0;i<12;i++){
+  for(let i=0;i<60;i++){
     const d=new Date(now.getFullYear(),now.getMonth()-i,1);
     const val=d.getFullYear()+"-"+(d.getMonth()<9?"0":"")+(d.getMonth()+1);
     opts.push(<option key={val} value={val}>{MN[d.getMonth()]} {d.getFullYear()}</option>);
