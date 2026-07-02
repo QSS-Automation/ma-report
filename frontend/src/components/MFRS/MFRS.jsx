@@ -138,8 +138,9 @@ function MfrsTable({data}){
             </tr>
           ))}
           <tr className="mf2-tr-total">
-            <td className="mf2-td-fix" colSpan={2}>Total</td>
-            <td className="mf2-td-fix" style={{left:230,textAlign:"right",paddingRight:10}}>—</td>
+             <td className="mf2-td-fix" style={{left:0}}>Total</td>
+             <td className="mf2-td-fix" style={{left:150}}></td>
+             <td className="mf2-td-fix" style={{left:230,textAlign:"right",paddingRight:10}}>—</td>
             {mks.map(mk=><td key={mk} className="mf2-td-num mf2-td-active" style={{fontWeight:700}}>
               {totals[mk]>0?totals[mk].toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2}):<span className="mf2-td-dash">-</span>}
             </td>)}
