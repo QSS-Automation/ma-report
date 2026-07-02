@@ -29,13 +29,17 @@ export default function MFRS({defaultSub="sales", entity = "QM", setEntity, enti
 
   const cur=data?.[sub];
   const exportCSV = () => {
-  if (!data) { showToast("⚠ Run report first."); return; }
-  const headers = ["Doc No","Description","Split Index","Start Date","End Date","Total Days","Net Amount",...(data.month_labels||[])];
-  const rows = (data.rows||[]).map(r => [
-    r.doc_no, r.description, r.split_index,
-    r.start_date, r.end_date, r.total_days, Number(r.net_amount)||0,
-    ...(data.month_labels||[]).map(m => Number(r.monthly?.[m])||0)
-  ]);
+  if (!cur) { showToast("⚠ Run report first."); return; }
+  const mks = cur.month_columns || [];
+  const headers = ["Doc No","Description","Days","YTD",...mks];
+  const rows = (cur.rows||[]).map(r => {
+    const ytd = mks.reduce((sum,mk)=>sum+(Number(r.monthly?.[mk])||0), 0);
+    return [
+      r.doc_no, r.description, r.total_days,
+      ytd.toFixed(2),
+      ...mks.map(mk => Number(r.monthly?.[mk]||0).toFixed(2))
+    ];
+  });
   const csv = [headers,...rows]
     .map(r => r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(","))
     .join("\n");
