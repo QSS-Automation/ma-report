@@ -118,8 +118,9 @@ function MfrsTable({data}){
           <th className="mf2-th-fix" style={{minWidth:80,left:150}}>Doc No</th>
           <th className="mf2-th-fix" style={{minWidth:70,left:230,textAlign:"right",paddingRight:10}}>Days</th>
           {mks.map(mk=>{
-            const mo=parseInt(mk.slice(1))-1;
-            return<th key={mk} className="mf2-th-num mf2-th-active">{MN[mo]}<br/><span style={{fontWeight:400,fontSize:8}}>month</span></th>;
+            const [yr, mpart] = mk.split("-m");
+            const mo = parseInt(mpart) - 1;
+            return<th key={mk} className="mf2-th-num mf2-th-active">{MN[mo]}<br/><span style={{fontWeight:400,fontSize:8}}>{yr}</span></th>;
           })}
         </tr></thead>
         <tbody>
