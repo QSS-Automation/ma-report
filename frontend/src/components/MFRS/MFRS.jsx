@@ -85,7 +85,7 @@ export default function MFRS({defaultSub="sales", entity = "QM", setEntity, enti
         <div className="card">
           <div className="card-hdr">
             <div className="card-title">{sub==="sales"?"Sales — Revenue recognition by contract":"Purchases — Cost recognition by contract"}</div>
-            <div className="card-sub">QM</div>
+            <div className="card-sub">{entity}</div>
           </div>
           {cur&&cur.rows.length>0?(
             <MfrsTable data={cur}/>
@@ -95,7 +95,7 @@ export default function MFRS({defaultSub="sales", entity = "QM", setEntity, enti
             </div>
           )}
           <div style={{padding:"5px 13px",background:"#fafaf8",borderTop:"1px solid #e8e7e0",fontSize:9,color:"#888780",display:"flex",justifyContent:"space-between"}}>
-            <span>QM · MYR · MFRS 15</span>
+            <span>{entity} · MYR · MFRS 15</span>
             <span>Value = Amount × (days overlap / total days) for each period</span>
           </div>
         </div>
