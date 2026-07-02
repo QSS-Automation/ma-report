@@ -1,7 +1,8 @@
-import React,{useState,useCallback,useEffect} from "react";
+
 import {getMfrs} from "../../services/api";
 import {MN,pad2,fmtMYRK} from "../../utils/fmt";
 import {showToast} from "../../utils/toast";
+import React,{useState,useCallback,useEffect,useRef} from "react";
 
 export default function MFRS({defaultSub="sales", entity = "QM", setEntity, entities = [] }){
   const now=new Date();
@@ -104,8 +105,19 @@ export default function MFRS({defaultSub="sales", entity = "QM", setEntity, enti
 }
 
 function MfrsTable({data}){
+  const descRef = useRef(null);
+  const docRef  = useRef(null);
+  const [offsets, setOffsets] = useState({doc:150, days:230});
+
+  useEffect(()=>{
+    if(descRef.current && docRef.current){
+      const descW = descRef.current.offsetWidth;
+      const docW  = docRef.current.offsetWidth;
+      setOffsets({doc: descW, days: descW + docW});
+    }
+  },[data]);
+
   const mks=data.month_columns;
-  const allCols=["description","doc_no","total_days",...mks];
   const totals={};
   mks.forEach(mk=>{totals[mk]=0;});
   data.rows.forEach(r=>{ mks.forEach(mk=>{ if(r.monthly[mk])totals[mk]+=Number(r.monthly[mk]); }); });
@@ -114,12 +126,12 @@ function MfrsTable({data}){
     <div className="mf2-wrap">
       <table className="mf2-table">
         <thead><tr>
-          <th className="mf2-th-fix" style={{minWidth:150}}>Description</th>
-          <th className="mf2-th-fix" style={{minWidth:80,left:150}}>Doc No</th>
-          <th className="mf2-th-fix" style={{minWidth:70,left:230,textAlign:"right",paddingRight:10}}>Days</th>
+          <th ref={descRef} className="mf2-th-fix" style={{left:0,minWidth:180}}>Description</th>
+          <th ref={docRef}  className="mf2-th-fix" style={{left:offsets.doc,minWidth:90}}>Doc No</th>
+          <th className="mf2-th-fix" style={{left:offsets.days,minWidth:70,textAlign:"right",paddingRight:10}}>Days</th>
           {mks.map(mk=>{
-            const [yr, mpart] = mk.split("-m");
-            const mo = parseInt(mpart) - 1;
+            const [yr,mpart]=mk.split("-m");
+            const mo=parseInt(mpart)-1;
             return<th key={mk} className="mf2-th-num mf2-th-active">{MN[mo]}<br/><span style={{fontWeight:400,fontSize:8}}>{yr}</span></th>;
           })}
         </tr></thead>
@@ -127,20 +139,20 @@ function MfrsTable({data}){
           {data.rows.map((r,i)=>(
             <tr key={i}>
               <td className="mf2-td-fix" style={{left:0,fontWeight:500}}>{r.description||"—"}</td>
-              <td className="mf2-td-fix" style={{left:150,color:"#888780"}}>{r.doc_no||"—"}</td>
-              <td className="mf2-td-fix" style={{left:230,textAlign:"right",paddingRight:10,color:"#5f5e5a"}}>{r.total_days||"—"}</td>
+              <td className="mf2-td-fix" style={{left:offsets.doc,color:"#888780"}}>{r.doc_no||"—"}</td>
+              <td className="mf2-td-fix" style={{left:offsets.days,textAlign:"right",paddingRight:10,color:"#5f5e5a"}}>{r.total_days||"—"}</td>
               {mks.map(mk=>{
                 const v=r.monthly[mk];
-                return<td key={mk} className={"mf2-td-num mf2-td-active"}>
+                return<td key={mk} className="mf2-td-num mf2-td-active">
                   {v&&Number(v)!==0?Number(v).toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2}):<span className="mf2-td-dash">-</span>}
                 </td>;
               })}
             </tr>
           ))}
           <tr className="mf2-tr-total">
-             <td className="mf2-td-fix" style={{left:0}}>Total</td>
-             <td className="mf2-td-fix" style={{left:150}}></td>
-             <td className="mf2-td-fix" style={{left:230,textAlign:"right",paddingRight:10}}>—</td>
+            <td className="mf2-td-fix" style={{left:0,background:"#EEF4FB"}}>Total</td>
+            <td className="mf2-td-fix" style={{left:offsets.doc,background:"#EEF4FB"}}></td>
+            <td className="mf2-td-fix" style={{left:offsets.days,textAlign:"right",paddingRight:10,background:"#EEF4FB"}}>—</td>
             {mks.map(mk=><td key={mk} className="mf2-td-num mf2-td-active" style={{fontWeight:700}}>
               {totals[mk]>0?totals[mk].toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2}):<span className="mf2-td-dash">-</span>}
             </td>)}
