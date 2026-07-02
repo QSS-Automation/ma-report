@@ -126,7 +126,7 @@ function MfrsTable({data}){
         <tbody>
           {data.rows.map((r,i)=>(
             <tr key={i}>
-              <td className="mf2-td-fix" style={{fontWeight:500}}>{r.description||"—"}</td>
+              <td className="mf2-td-fix" style={{left:0,fontWeight:500}}>{r.description||"—"}</td>
               <td className="mf2-td-fix" style={{left:150,color:"#888780"}}>{r.doc_no||"—"}</td>
               <td className="mf2-td-fix" style={{left:230,textAlign:"right",paddingRight:10,color:"#5f5e5a"}}>{r.total_days||"—"}</td>
               {mks.map(mk=>{
