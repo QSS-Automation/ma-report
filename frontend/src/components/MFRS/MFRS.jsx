@@ -107,13 +107,19 @@ export default function MFRS({defaultSub="sales", entity = "QM", setEntity, enti
 function MfrsTable({data}){
   const descRef = useRef(null);
   const docRef  = useRef(null);
-  const [offsets, setOffsets] = useState({doc:150, days:230});
+  const ytdRef  = useRef(null);  // ← add
+  const [offsets, setOffsets] = useState({doc:150, days:230, ytd:300});  // ← add ytd
 
   useEffect(()=>{
-    if(descRef.current && docRef.current){
+    if(descRef.current && docRef.current && ytdRef.current){
       const descW = descRef.current.offsetWidth;
       const docW  = docRef.current.offsetWidth;
-      setOffsets({doc: descW, days: descW + docW});
+      const daysW = ytdRef.current.offsetWidth;  // days col width
+      setOffsets({
+        doc:  descW,
+        days: descW + docW,
+        ytd:  descW + docW + daysW,  // ← YTD sits after Days
+      });
     }
   },[data]);
 
@@ -122,13 +128,18 @@ function MfrsTable({data}){
   mks.forEach(mk=>{totals[mk]=0;});
   data.rows.forEach(r=>{ mks.forEach(mk=>{ if(r.monthly[mk])totals[mk]+=Number(r.monthly[mk]); }); });
 
+  // YTD = sum of all monthly values for each row
+  const rowYtd = r => mks.reduce((sum,mk)=>sum+(Number(r.monthly[mk])||0), 0);
+  const totalYtd = mks.reduce((sum,mk)=>sum+(totals[mk]||0), 0);
+
   return(
     <div className="mf2-wrap">
       <table className="mf2-table">
         <thead><tr>
           <th ref={descRef} className="mf2-th-fix" style={{left:0,minWidth:180}}>Description</th>
           <th ref={docRef}  className="mf2-th-fix" style={{left:offsets.doc,minWidth:90}}>Doc No</th>
-          <th className="mf2-th-fix" style={{left:offsets.days,minWidth:70,textAlign:"right",paddingRight:10}}>Days</th>
+          <th ref={ytdRef}  className="mf2-th-fix" style={{left:offsets.days,minWidth:70,textAlign:"right",paddingRight:10}}>Days</th>
+          <th className="mf2-th-fix" style={{left:offsets.ytd,minWidth:110,textAlign:"right",paddingRight:10,borderRight:"2px solid #c8d9ef"}}>YTD</th>
           {mks.map(mk=>{
             const [yr,mpart]=mk.split("-m");
             const mo=parseInt(mpart)-1;
@@ -136,23 +147,32 @@ function MfrsTable({data}){
           })}
         </tr></thead>
         <tbody>
-          {data.rows.map((r,i)=>(
-            <tr key={i}>
-              <td className="mf2-td-fix" style={{left:0,fontWeight:500}}>{r.description||"—"}</td>
-              <td className="mf2-td-fix" style={{left:offsets.doc,color:"#888780"}}>{r.doc_no||"—"}</td>
-              <td className="mf2-td-fix" style={{left:offsets.days,textAlign:"right",paddingRight:10,color:"#5f5e5a"}}>{r.total_days||"—"}</td>
-              {mks.map(mk=>{
-                const v=r.monthly[mk];
-                return<td key={mk} className="mf2-td-num mf2-td-active">
-                  {v&&Number(v)!==0?Number(v).toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2}):<span className="mf2-td-dash">-</span>}
-                </td>;
-              })}
-            </tr>
-          ))}
+          {data.rows.map((r,i)=>{
+            const ytd=rowYtd(r);
+            return(
+              <tr key={i}>
+                <td className="mf2-td-fix" style={{left:0,fontWeight:500}}>{r.description||"—"}</td>
+                <td className="mf2-td-fix" style={{left:offsets.doc,color:"#888780"}}>{r.doc_no||"—"}</td>
+                <td className="mf2-td-fix" style={{left:offsets.days,textAlign:"right",paddingRight:10,color:"#5f5e5a"}}>{r.total_days||"—"}</td>
+                <td className="mf2-td-fix" style={{left:offsets.ytd,textAlign:"right",paddingRight:10,fontWeight:600,color:"#185FA5",borderRight:"2px solid #c8d9ef"}}>
+                  {ytd!==0?ytd.toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2}):<span className="mf2-td-dash">-</span>}
+                </td>
+                {mks.map(mk=>{
+                  const v=r.monthly[mk];
+                  return<td key={mk} className="mf2-td-num mf2-td-active">
+                    {v&&Number(v)!==0?Number(v).toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2}):<span className="mf2-td-dash">-</span>}
+                  </td>;
+                })}
+              </tr>
+            );
+          })}
           <tr className="mf2-tr-total">
             <td className="mf2-td-fix" style={{left:0,background:"#EEF4FB"}}>Total</td>
             <td className="mf2-td-fix" style={{left:offsets.doc,background:"#EEF4FB"}}></td>
             <td className="mf2-td-fix" style={{left:offsets.days,textAlign:"right",paddingRight:10,background:"#EEF4FB"}}>—</td>
+            <td className="mf2-td-fix" style={{left:offsets.ytd,textAlign:"right",paddingRight:10,fontWeight:700,color:"#185FA5",background:"#EEF4FB",borderRight:"2px solid #c8d9ef"}}>
+              {totalYtd.toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2})}
+            </td>
             {mks.map(mk=><td key={mk} className="mf2-td-num mf2-td-active" style={{fontWeight:700}}>
               {totals[mk]>0?totals[mk].toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2}):<span className="mf2-td-dash">-</span>}
             </td>)}
