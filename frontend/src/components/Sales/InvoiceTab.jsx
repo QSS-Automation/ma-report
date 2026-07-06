@@ -155,6 +155,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [sortKey,setSortKey]=useState("trans_date");
   const [sortDir,setSortDir]=useState("desc");
   const [colFilter,setColFilter]=useState({});
+  const [catFilter,setCatFilter]=useState("");
   const [openMenu,setOpenMenu]=useState(null);
   const [splitState,setSplitState]=useState({});
   const [expanded,setExpanded]=useState({});
@@ -420,6 +421,15 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
             {p==="tm"?"This month":p==="lm"?"Last month":p==="ty"?"This year":"Last year"}
           </button>
         ))}
+        <div className="f-div"/>
+        <span className="f-lbl">Category</span>
+        <select className="f-sel" value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+          <option value="">All</option>
+          <option value="PS">PS</option>
+          <option value="LIC">LIC</option>
+          <option value="HW">HW</option>
+          <option value="AMS">AMS</option>
+        </select>
         <button className="run" onClick={run} disabled={loading}>
           {loading?"Loading…":"Run Report"}
         </button>
