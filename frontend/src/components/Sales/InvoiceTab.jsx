@@ -155,31 +155,27 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [sortKey,setSortKey]=useState("trans_date");
   const [sortDir,setSortDir]=useState("desc");
   const [colFilter,setColFilter]=useState({});
-  const [catFilter,setCatFilter]=useState("");
   const [openMenu,setOpenMenu]=useState(null);
   const [splitState,setSplitState]=useState({});
   const [expanded,setExpanded]=useState({});
   const [rowState,setRowState]=useState({});
-  const [editState,setEditState]=useState({});  // ← inline edit state
+  const [editState,setEditState]=useState({});
   const newLineRef=useRef({});
 
-  useEffect(()=>{setInvoices([]);setCatFilter("");},[entity]);
-  
+  useEffect(()=>{setInvoices([]);},[entity]);
+
   const toggleExpand=sk=>setExpanded(p=>({...p,[sk]:!p[sk]}));
   const updateRow=(sk,key,val)=>setRowState(p=>({...p,[sk]:{...p[sk],[key]:val}}));
   const getRow=(sk,key,fallback="")=>rowState[sk]?.[key]??fallback;
 
-  // ── Inline edit helpers ────────────────────────────────────────────────
-  // Single split — pre-fill edit state from existing split
   const startEdit=(sk,split)=>setEditState(p=>({...p,[sk]:{
     cat: split.category||"",
     eu:  split.end_user||"",
     sd:  split.start_date||"",
     ed:  split.end_date||"",
-    rm: split.remark||"",
+    rm:  split.remark||"",
   }}));
 
-  // Multi-split — pre-fill draft lines from existing splits
   const startMultiEdit=(sk,splits)=>{
     setSplitState(p=>({...p,[sk]:{lines:splits.map(s=>({
       cat: s.category||"PS",
@@ -188,7 +184,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       ed:  s.end_date||"",
       rm:  s.remark||"",
     }))}}));
-    setExpanded(p=>({...p,[sk]:true})); // ensure expanded
+    setExpanded(p=>({...p,[sk]:true}));
   };
 
   const cancelEdit=sk=>setEditState(p=>{const n={...p};delete n[sk];return n;});
@@ -235,9 +231,18 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const COL_FIELD={
     trans_date:"trans_date",acc_no:"acc_no",acc_desc:"de_acc_desc",
     proj_no:"proj_no",ref_no1:"ref_no1",ref_no2:"ref_no2",
-    description:"description",home_dr:"home_dr",home_cr:"home_cr",amount:"amount"
+    description:"description",home_dr:"home_dr",home_cr:"home_cr",amount:"amount",
+    category:"category"
   };
+
   const getUnique=col=>{
+    if(col==="category"){
+      return[...new Set(invoices.flatMap(inv=>
+        inv.splits&&inv.splits.length
+          ?inv.splits.map(s=>s.category)
+          :[inv.category]
+      ).filter(v=>v!=null&&v!==""))].sort();
+    }
     const field=COL_FIELD[col]||col;
     return[...new Set(invoices.map(inv=>inv[field]).filter(v=>v!=null&&v!==""))].sort();
   };
@@ -245,17 +250,15 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const colFiltered=invoices.filter(inv=>
     Object.entries(colFilter).every(([col,val])=>{
       if(!val)return true;
+      if(col==="category"){
+        if(inv.splits&&inv.splits.length)
+          return inv.splits.some(s=>s.category===val);
+        return (inv.category||"")===val;
+      }
       const field=COL_FIELD[col]||col;
       return String(inv[field]||"").toLowerCase()===val.toLowerCase();
     })
   );
-  const catFiltered=catFilter
-  ?colFiltered.filter(inv=>{
-    if(inv.splits&&inv.splits.length)
-      return inv.splits.some(s=>s.category===catFilter);
-    return (inv.category||getRow(inv.source_key,"cat",""))===catFilter;
-  })
-  :colFiltered;
   const searched=search
     ?colFiltered.filter(inv=>JSON.stringify(inv).toLowerCase().includes(search.toLowerCase()))
     :colFiltered;
@@ -271,10 +274,10 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     onSort:handleSort,onFilter:handleFilter,onMenu:setOpenMenu,getUnique};
 
   const openSplit=sk=>setSplitState(p=>({...p,[sk]:{lines:[
-    {cat:"PS",amt:"",sd:"",ed:""},
-    {cat:"LIC",amt:"",sd:"",ed:""}
+    {cat:"PS",amt:"",sd:"",ed:"",rm:""},
+    {cat:"LIC",amt:"",sd:"",ed:"",rm:""}
   ]}}));
-  const addSplitLine=sk=>setSplitState(p=>({...p,[sk]:{lines:[...(p[sk]?.lines||[]),{cat:"PS",amt:"",sd:"",ed:""}]}}));
+  const addSplitLine=sk=>setSplitState(p=>({...p,[sk]:{lines:[...(p[sk]?.lines||[]),{cat:"PS",amt:"",sd:"",ed:"",rm:""}]}}));
   const removeSplitLine=(sk,idx)=>setSplitState(p=>{
     const lines=[...(p[sk]?.lines||[])];lines.splice(idx,1);return{...p,[sk]:{lines}};
   });
@@ -290,7 +293,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       const res=await saveSplits({source_key:sk,journal_type:tab==="sales"?"SALES":"PURCHASE",
         user:user?.user_id||"user",entity,
         splits:lines.map(l=>({category:l.cat,split_amount:parseFloat(l.amt)||0,
-          start_date:l.sd||null,end_date:l.ed||null,remark: l.rm||null}))});
+          start_date:l.sd||null,end_date:l.ed||null,remark:l.rm||null}))});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       showToast("✓ Split saved");
       setSplitState(p=>{const n={...p};delete n[sk];return n;});
@@ -311,14 +314,13 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           start_date:   rs.sd||null,
           end_date:     rs.ed||null,
           end_user:     rs.eu||null,
-          remark: rs.rm||null
+          remark:       rs.rm||null
         }]});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       showToast("✓ Saved");run();
     }catch(e){showToast("⚠ "+e.message);}
   };
 
-  // ── Save inline edit for single split ─────────────────────────────────
   const saveEdit=async(sk,invAmt)=>{
     const es=editState[sk]||{};
     if(!es.sd||!es.ed){showToast("⚠ Please enter Start Date and End Date");return;}
@@ -332,7 +334,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           start_date:   es.sd||null,
           end_date:     es.ed||null,
           end_user:     es.eu||null,
-          remark: es.rm||null
+          remark:       es.rm||null
         }]});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       cancelEdit(sk);
@@ -359,8 +361,11 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       await saveManualLine({journal_type:tab==="sales"?"SALES":"PURCHASE",
         trans_date:f.date||new Date().toISOString().slice(0,10),acc_no:f.accNo||"",
         de_acc_desc:f.deAcc||"",proj_no:f.proj||"",ref_no1:f.ref||"",
-        description:f.desc||"",home_dr:parseFloat((f.hdr||"").replace(/,/g,""))||0, home_cr:parseFloat((f.hcr||"").replace(/,/g,""))||0,
-        split_amount:parseFloat((f.hdr||"").replace(/,/g,""))||0,category:f.cat||null,end_user:f.eu||null,
+        description:f.desc||"",
+        home_dr:parseFloat((f.hdr||"").replace(/,/g,""))||0,
+        home_cr:parseFloat((f.hcr||"").replace(/,/g,""))||0,
+        split_amount:parseFloat((f.hdr||"").replace(/,/g,""))||0,
+        category:f.cat||null,end_user:f.eu||null,
         start_date:f.sd||null,end_date:f.ed||null,remark:f.rm||"",
         user:user?.user_id||"user",entity});
       setNewLineOpen(false);showToast("✓ New deferred line saved");run();
@@ -370,16 +375,16 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const exportCSV=()=>{
     if(!invoices.length){showToast("⚠ No data to export.");return;}
     const headers=["Date","Acc No","Acc Desc","Project Code","Ref 1","Ref 2",
-      "Description","Home DR","Home CR","Amount","Type","End User","Start Date","End Date","Days"];
+      "Description","Home DR","Home CR","Amount","Type","End User","Start Date","End Date","Days","Remark"];
     const rows=invoices.flatMap(inv=>{
       if(inv.splits&&inv.splits.length){
         return inv.splits.map(s=>[inv.trans_date,inv.acc_no,inv.de_acc_desc,inv.proj_no,
           inv.ref_no1,inv.ref_no2,inv.description,inv.home_dr,inv.home_cr,
-          s.net_amount,s.category||"—",s.end_user||"—",s.start_date||"—",s.end_date||"—",s.total_days||"—"]);
+          s.net_amount,s.category||"—",s.end_user||"—",s.start_date||"—",s.end_date||"—",s.total_days||"—",s.remark||"—"]);
       }
       return[[inv.trans_date,inv.acc_no,inv.de_acc_desc,inv.proj_no,
         inv.ref_no1,inv.ref_no2,inv.description,inv.home_dr,inv.home_cr,
-        inv.amount,"—","—","—","—","—"]];
+        inv.amount,"—","—","—","—","—","—"]];
     });
     const csv=[headers,...rows]
       .map(r=>r.map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(","))
@@ -428,15 +433,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
             {p==="tm"?"This month":p==="lm"?"Last month":p==="ty"?"This year":"Last year"}
           </button>
         ))}
-        <div className="f-div"/>
-        <span className="f-lbl">Category</span>
-        <select className="f-sel" value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
-          <option value="">All</option>
-          <option value="PS">PS</option>
-          <option value="LIC">LIC</option>
-          <option value="HW">HW</option>
-          <option value="AMS">AMS</option>
-        </select>
         <button className="run" onClick={run} disabled={loading}>
           {loading?"Loading…":"Run Report"}
         </button>
@@ -530,12 +526,12 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   <ColHeader label="Home DR"      col="home_dr"     minWidth={100} align="right" {...chProps}/>
                   <ColHeader label="Home CR"      col="home_cr"     minWidth={100} align="right" {...chProps}/>
                   <ColHeader label="Amount"       col="amount"      minWidth={100} align="right" {...chProps}/>
-                  <StaticTh label="Type"       minWidth={110}/>
+                  <ColHeader label="Type"         col="category"    minWidth={110} {...chProps}/>
                   <StaticTh label="End User"   minWidth={100}/>
                   <StaticTh label="Start Date" minWidth={96}/>
                   <StaticTh label="End Date"   minWidth={96}/>
                   <StaticTh label="Days"       minWidth={60} align="right"/>
-                  <StaticTh label="Remark" minWidth={120}/>
+                  <StaticTh label="Remark"     minWidth={120}/>
                   <StaticTh label="Action"     minWidth={120}/>
                   <th style={{width:"100%",background:"#fafaf8",borderBottom:"1px solid #e8e7e0"}}/>
                 </tr>
@@ -551,7 +547,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   const hdr=Number(inv.home_dr),hcr=Number(inv.home_cr),amt=Number(inv.amount);
                   const isEx=expanded[inv.source_key];
 
-                  // ── Type badge ───────────────────────────────────────
                   let typeBdg;
                   const savedCat=inv.category||getRow(inv.source_key,"cat","");
                   if(isMultiSplit){
@@ -560,7 +555,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                       Split {isEx?"▲":"▼"}
                     </span>;
                   }else if(inEdit){
-                    // Single split in edit mode — show category select pre-filled
                     typeBdg=<select className="cat-sel"
                       value={inEdit.cat}
                       onChange={e=>updateEdit(inv.source_key,"cat",e.target.value)}>
@@ -679,6 +673,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
                               })()}
                         </td>
+
                         {/* Remark */}
                         <td>
                           {inEdit
@@ -698,6 +693,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                     onChange={e=>updateRow(inv.source_key,"rm",e.target.value)}
                                     style={{width:110,fontSize:11,padding:"3px 5px"}}/>}
                         </td>
+
                         {/* Action */}
                         <td style={{whiteSpace:"nowrap"}}>
                           {locked
@@ -706,18 +702,15 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 🔓 Request unlock
                               </button>
                             :inEdit
-                              // Single split inline edit — Update / Cancel
                               ?<span style={{display:"flex",gap:4}}>
                                   <button className="btn-save" onClick={()=>saveEdit(inv.source_key,amt)}>Update</button>
                                   <button className="btn-del" onClick={()=>cancelEdit(inv.source_key)}>✕</button>
                                 </span>
                               :singleSplit
-                                // Single split saved — Edit button
                                 ?singleSplit.is_locked
                                   ?<span style={{fontSize:10,color:"#888780"}}>🔒 Locked</span>
                                   :<button className="btn-split" onClick={()=>startEdit(inv.source_key,singleSplit)}>✎ Edit</button>
                                 :!hasSplit&&!inDraft
-                                  // No split yet — Save / Split buttons
                                   ?<span style={{display:"flex",gap:4}}>
                                       <button className="btn-save" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</button>
                                       <button className="btn-split" onClick={()=>openSplit(inv.source_key)}>＋ Split</button>
@@ -762,7 +755,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
                             &nbsp;&nbsp;
-                            {/* Multi-split Edit — pre-fills draft with existing values */}
                             {!locked&&<button className="btn-split"
                               onClick={()=>startMultiEdit(inv.source_key,inv.splits)}>
                               ✎ Edit
@@ -772,7 +764,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         </tr>
                       )}
 
-                      {/* ── Draft split UI (new split or editing multi-split) ── */}
+                      {/* ── Draft split UI ── */}
                       {inDraft&&inDraft.lines.map((line,li)=>{
                         const tDays=line.sd&&line.ed
                           ?Math.round((new Date(line.ed)-new Date(line.sd))/86400000)+1:"";
