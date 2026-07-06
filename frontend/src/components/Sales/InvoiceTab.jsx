@@ -163,8 +163,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [editState,setEditState]=useState({});  // ← inline edit state
   const newLineRef=useRef({});
 
-  useEffect(()=>{setInvoices([]);},[entity]);
-
+  useEffect(()=>{setInvoices([]);setCatFilter("");},[entity]);
+  
   const toggleExpand=sk=>setExpanded(p=>({...p,[sk]:!p[sk]}));
   const updateRow=(sk,key,val)=>setRowState(p=>({...p,[sk]:{...p[sk],[key]:val}}));
   const getRow=(sk,key,fallback="")=>rowState[sk]?.[key]??fallback;
@@ -249,6 +249,13 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       return String(inv[field]||"").toLowerCase()===val.toLowerCase();
     })
   );
+  const catFiltered=catFilter
+  ?colFiltered.filter(inv=>{
+    if(inv.splits&&inv.splits.length)
+      return inv.splits.some(s=>s.category===catFilter);
+    return (inv.category||getRow(inv.source_key,"cat",""))===catFilter;
+  })
+  :colFiltered;
   const searched=search
     ?colFiltered.filter(inv=>JSON.stringify(inv).toLowerCase().includes(search.toLowerCase()))
     :colFiltered;
