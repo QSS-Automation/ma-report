@@ -175,6 +175,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     eu:  split.end_user||"",
     sd:  split.start_date||"",
     ed:  split.end_date||"",
+    rm: split.remark||"",
   }}));
 
   // Multi-split — pre-fill draft lines from existing splits
@@ -184,6 +185,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       amt: String(s.net_amount||""),
       sd:  s.start_date||"",
       ed:  s.end_date||"",
+      rm:  s.remark||"",
     }))}}));
     setExpanded(p=>({...p,[sk]:true})); // ensure expanded
   };
@@ -280,7 +282,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       const res=await saveSplits({source_key:sk,journal_type:tab==="sales"?"SALES":"PURCHASE",
         user:user?.user_id||"user",entity,
         splits:lines.map(l=>({category:l.cat,split_amount:parseFloat(l.amt)||0,
-          start_date:l.sd||null,end_date:l.ed||null}))});
+          start_date:l.sd||null,end_date:l.ed||null,remark: l.rm||null}))});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       showToast("✓ Split saved");
       setSplitState(p=>{const n={...p};delete n[sk];return n;});
@@ -300,7 +302,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           split_amount: parseFloat(invAmt)||0,
           start_date:   rs.sd||null,
           end_date:     rs.ed||null,
-          end_user:     rs.eu||null
+          end_user:     rs.eu||null,
+          remark: rs.rm||null
         }]});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       showToast("✓ Saved");run();
@@ -320,7 +323,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           split_amount: parseFloat(invAmt)||0,
           start_date:   es.sd||null,
           end_date:     es.ed||null,
-          end_user:     es.eu||null
+          end_user:     es.eu||null,
+          remark: es.rm||null
         }]});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       cancelEdit(sk);
@@ -381,8 +385,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const isSales=tab==="sales";
   const noun=isSales?"Sales":"Purchases";
   const periodLbl=mp.fromLabel===mp.toLabel?mp.fromLabel:mp.fromLabel+"–"+mp.toLabel;
-  const colSpanFull=isSales?16:17;
-  const tableMinWidth=isSales?1368:1768;
+  const colSpanFull=isSales?17:18;
+  const tableMinWidth=isSales?1468:1868;
 
   return(
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",minHeight:0}}>
@@ -514,6 +518,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   <StaticTh label="Start Date" minWidth={96}/>
                   <StaticTh label="End Date"   minWidth={96}/>
                   <StaticTh label="Days"       minWidth={60} align="right"/>
+                  <StaticTh label="Remark" minWidth={120}/>
                   <StaticTh label="Action"     minWidth={120}/>
                   <th style={{width:"100%",background:"#fafaf8",borderBottom:"1px solid #e8e7e0"}}/>
                 </tr>
@@ -657,7 +662,25 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
                               })()}
                         </td>
-
+                        {/* Remark */}
+                        <td>
+                          {inEdit
+                            ?<input type="text" className="f-date"
+                                value={inEdit.rm||""}
+                                placeholder="Remark…"
+                                onChange={e=>updateEdit(inv.source_key,"rm",e.target.value)}
+                                style={{width:110,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                            :singleSplit
+                              ?<span style={{fontSize:11,color:"#888780"}}>{singleSplit.remark||"—"}</span>
+                              :hasSplit
+                                ?<span className="muted">—</span>
+                                :<input type="text" className="f-date"
+                                    value={getRow(inv.source_key,"rm")}
+                                    readOnly={locked}
+                                    placeholder="Remark…"
+                                    onChange={e=>updateRow(inv.source_key,"rm",e.target.value)}
+                                    style={{width:110,fontSize:11,padding:"3px 5px"}}/>}
+                        </td>
                         {/* Action */}
                         <td style={{whiteSpace:"nowrap"}}>
                           {locked
@@ -711,6 +734,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                           <td><input type="date" className="f-date" defaultValue={line.start_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td className="tr mono muted">{line.total_days||"—"}</td>
+                          <td><span style={{fontSize:11,color:"#888780"}}>{line.remark||"—"}</span></td>
                           <td colSpan={2}/>
                         </tr>
                       ))}
@@ -768,6 +792,12 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
                             </td>
                             <td className="tr mono muted">{tDays||"—"}</td>
+                            <td>
+                              <input type="text" className="f-date" value={line.rm||""}
+                                onChange={e=>updateSplitLine(inv.source_key,li,"rm",e.target.value)}
+                                placeholder="Remark…"
+                                style={{width:110,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                            </td>
                             <td>
                               <button className="btn-del" onClick={()=>removeSplitLine(inv.source_key,li)}>✕</button>
                             </td>
