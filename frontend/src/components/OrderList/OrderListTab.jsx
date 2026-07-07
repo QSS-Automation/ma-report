@@ -29,7 +29,7 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
     rows.forEach(r => {
       if (!map[r.proj_no]) map[r.proj_no] = { sales: [], purchases: [] };
       if (r.journal_type === "SALES")    map[r.proj_no].sales.push(r);
-      if (r.journal_type === "PURCHASE") map[r.proj_no].purchases.push(r);
+      if (r.journal_type === "PURCHASE" || r.journal_type === "BANK") map[r.proj_no].purchases.push(r);
     });
     return map;
   }, [rows]);
