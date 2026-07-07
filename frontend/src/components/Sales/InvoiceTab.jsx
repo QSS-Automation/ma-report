@@ -140,6 +140,27 @@ function StaticTh({label,minWidth=90,align="left"}){
   );
 }
 
+const CAT_OPTIONS = (
+  <>
+    <option value="">— Assign</option>
+    <option value="PS">PS</option>
+    <option value="LIC">LIC</option>
+    <option value="HW">HW</option>
+    <option value="AMS">AMS</option>
+    <option value="TRN">Training</option>
+  </>
+);
+
+const CAT_OPTIONS_NO_BLANK = (
+  <>
+    <option value="PS">PS</option>
+    <option value="LIC">LIC</option>
+    <option value="HW">HW</option>
+    <option value="AMS">AMS</option>
+    <option value="TRN">Training</option>
+  </>
+);
+
 export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const {user}=useAuth();
   const now=new Date();
@@ -520,7 +541,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
               value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
 
-          <div style={{overflowX:"auto",overflowY:"auto",width:"100%",maxHeight:"calc(100vh - 380px)"}}>
+          <div style={{overflowX:"auto",overflowY:"auto",width:"100%",maxHeight:"calc(100vh - 400px)"}}>
             <table style={{tableLayout:"fixed",borderCollapse:"collapse",minWidth:tableMinWidth}}>
               <thead style={{position:"sticky",top:0,zIndex:1}}>
                 <tr>
@@ -563,15 +584,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                       Split {isEx?"▲":"▼"}
                     </span>;
                   }else if(inEdit){
-                    typeBdg=<select className="cat-sel"
-                      value={inEdit.cat}
+                    typeBdg=<select className="cat-sel" value={inEdit.cat}
                       onChange={e=>updateEdit(inv.source_key,"cat",e.target.value)}>
-                      <option value="">— Assign</option>
-                      <option value="PS">PS</option>
-                      <option value="LIC">LIC</option>
-                      <option value="HW">HW</option>
-                      <option value="AMS">AMS</option>
-                      <option value="TRN">Training</option>
+                      {CAT_OPTIONS}
                     </select>;
                   }else if(singleSplit){
                     typeBdg=<CatBadge cat={singleSplit.category}/>;
@@ -580,16 +595,10 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   }else{
                     typeBdg=locked
                       ?<span className="bdg bdg-none">— Assign</span>
-                      :<select className="cat-sel"
-                        value={getRow(inv.source_key,"cat","")}
-                        onChange={e=>updateRow(inv.source_key,"cat",e.target.value)}>
-                        <option value="">— Assign</option>
-                        <option value="PS">PS</option>
-                        <option value="LIC">LIC</option>
-                        <option value="HW">HW</option>
-                        <option value="AMS">AMS</option>
-                        <option value="TRN">Training</option>
-                      </select>;
+                      :<select className="cat-sel" value={getRow(inv.source_key,"cat","")}
+                          onChange={e=>updateRow(inv.source_key,"cat",e.target.value)}>
+                          {CAT_OPTIONS}
+                        </select>;
                   }
 
                   return(
@@ -619,8 +628,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         <td>
                           {inEdit
                             ?<input type="text" className="f-date"
-                                value={inEdit.eu}
-                                placeholder="End user"
+                                value={inEdit.eu} placeholder="End user"
                                 onChange={e=>updateEdit(inv.source_key,"eu",e.target.value)}
                                 style={{width:90,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
                             :singleSplit
@@ -628,8 +636,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               :hasSplit
                                 ?<span className="muted">—</span>
                                 :<input type="text" className="f-date"
-                                    value={getRow(inv.source_key,"eu")}
-                                    readOnly={locked}
+                                    value={getRow(inv.source_key,"eu")} readOnly={locked}
                                     placeholder="End user"
                                     onChange={e=>updateRow(inv.source_key,"eu",e.target.value)}
                                     style={{width:90,fontSize:11,padding:"3px 5px"}}/>}
@@ -638,15 +645,13 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         {/* Start Date */}
                         <td>
                           {inEdit
-                            ?<input type="date" className="f-date"
-                                value={inEdit.sd}
+                            ?<input type="date" className="f-date" value={inEdit.sd}
                                 onChange={e=>updateEdit(inv.source_key,"sd",e.target.value)}
                                 style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
                             :singleSplit
                               ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.start_date)||"—"}</span>
                               :<input type="date" className="f-date"
-                                value={getRow(inv.source_key,"sd")}
-                                readOnly={locked||isMultiSplit}
+                                value={getRow(inv.source_key,"sd")} readOnly={locked||isMultiSplit}
                                 onChange={e=>updateRow(inv.source_key,"sd",e.target.value)}
                                 style={{width:96,fontSize:11,padding:"3px 5px",
                                         borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
@@ -655,15 +660,13 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         {/* End Date */}
                         <td>
                           {inEdit
-                            ?<input type="date" className="f-date"
-                                value={inEdit.ed}
+                            ?<input type="date" className="f-date" value={inEdit.ed}
                                 onChange={e=>updateEdit(inv.source_key,"ed",e.target.value)}
                                 style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
                             :singleSplit
                               ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.end_date)||"—"}</span>
                               :<input type="date" className="f-date"
-                                value={getRow(inv.source_key,"ed")}
-                                readOnly={locked||isMultiSplit}
+                                value={getRow(inv.source_key,"ed")} readOnly={locked||isMultiSplit}
                                 onChange={e=>updateRow(inv.source_key,"ed",e.target.value)}
                                 style={{width:96,fontSize:11,padding:"3px 5px",
                                         borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
@@ -672,24 +675,18 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         {/* Days */}
                         <td className="tr mono muted">
                           {inEdit
-                            ?(()=>{
-                              const sd=inEdit.sd,ed=inEdit.ed;
-                              return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
-                            })()
+                            ?(()=>{const sd=inEdit.sd,ed=inEdit.ed;
+                              return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";})()
                             :singleSplit
                               ?singleSplit.total_days||"—"
-                              :(()=>{
-                                const sd=getRow(inv.source_key,"sd"),ed=getRow(inv.source_key,"ed");
-                                return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";
-                              })()}
+                              :(()=>{const sd=getRow(inv.source_key,"sd"),ed=getRow(inv.source_key,"ed");
+                                return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";})()}
                         </td>
 
                         {/* Remark */}
                         <td>
                           {inEdit
-                            ?<input type="text" className="f-date"
-                                value={inEdit.rm||""}
-                                placeholder="Remark…"
+                            ?<input type="text" className="f-date" value={inEdit.rm||""} placeholder="Remark…"
                                 onChange={e=>updateEdit(inv.source_key,"rm",e.target.value)}
                                 style={{width:110,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
                             :singleSplit
@@ -697,8 +694,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               :hasSplit
                                 ?<span className="muted">—</span>
                                 :<input type="text" className="f-date"
-                                    value={getRow(inv.source_key,"rm")}
-                                    readOnly={locked}
+                                    value={getRow(inv.source_key,"rm")} readOnly={locked}
                                     placeholder="Remark…"
                                     onChange={e=>updateRow(inv.source_key,"rm",e.target.value)}
                                     style={{width:110,fontSize:11,padding:"3px 5px"}}/>}
@@ -786,11 +782,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                 <div style={{width:2,height:34,background:"#85B7EB",flexShrink:0,marginRight:6,borderRadius:1}}/>
                                 <select className="cat-sel" value={line.cat}
                                   onChange={e=>updateSplitLine(inv.source_key,li,"cat",e.target.value)}>
-                                  <option value="PS">PS</option>
-                                  <option value="LIC">LIC</option>
-                                  <option value="HW">HW</option>
-                                  <option value="AMS">AMS</option>
-                                  <option value="TRN">Training</option>
+                                  {CAT_OPTIONS_NO_BLANK}
                                 </select>
                               </div>
                             </td>
@@ -816,9 +808,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               <input type="text" className="f-date" value={line.rm||""}
                                 onChange={e=>updateSplitLine(inv.source_key,li,"rm",e.target.value)}
                                 placeholder="Remark…"
-                                style={{width:110,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                                style={{width:80,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
                             </td>
-                            <td>
+                            <td style={{whiteSpace:"nowrap"}}>
                               <button className="btn-del" onClick={()=>removeSplitLine(inv.source_key,li)}>✕</button>
                             </td>
                             <td/>
@@ -925,11 +917,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                     <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}} readOnly/></td>
                   <td><span className="new-line-lbl">Type</span>
                     <select onChange={e=>{newLineRef.current.cat=e.target.value;}}>
-                      <option value="PS">PS</option>
-                      <option value="LIC">LIC</option>
-                      <option value="HW">HW</option>
-                      <option value="AMS">AMS</option>
-                      <option value="TRN">Training</option>
+                      {CAT_OPTIONS_NO_BLANK}
                     </select></td>
                   <td><span className="new-line-lbl">End User</span>
                     <input type="text" placeholder="End user" style={{width:100}}
