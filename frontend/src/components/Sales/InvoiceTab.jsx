@@ -17,6 +17,7 @@ function CatBadge({cat}){
   if(cat==="LIC") return <span className="bdg bdg-lic">LIC</span>;
   if(cat==="HW")  return <span className="bdg" style={{background:"#FFF3E0",color:"#E65100"}}>HW</span>;
   if(cat==="AMS") return <span className="bdg" style={{background:"#E8F5E9",color:"#1B5E20"}}>AMS</span>;
+  if(cat==="TRN") return <span className="bdg" style={{background:"#FFFDE7",color:"#F57F17"}}>TRN</span>;
   return <span className="bdg">{cat||"—"}</span>;
 }
 
@@ -210,6 +211,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         else if(s.category==="LIC") totLIC+=Number(s.net_amount);
         else if(s.category==="HW")  totHW+=Number(s.net_amount);
         else if(s.category==="AMS") totAMS+=Number(s.net_amount);
+        else if(s.category==="TRN") totTRN+=Number(s.net_amount);
       });
     }else{
       const cat=inv.category||inv._cat||"";
@@ -217,6 +219,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       else if(cat==="LIC") totLIC+=n;
       else if(cat==="HW")  totHW+=n;
       else if(cat==="AMS") totAMS+=n;
+      else if(cat==="TRN") totTRN+=n;
       else{totUnc+=n;cntUnc++;}
     }
   });
@@ -490,6 +493,11 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
             <div className="kpi-sub">{totNet?((totAMS/totNet)*100).toFixed(1)+"% of total":""}</div>
           </div>
           <div className="kpi">
+            <div className="kpi-lbl">Training</div>
+            <div className="kpi-val" style={{color:"#F57F17"}}>{fmtMYR(Math.abs(totTRN))}</div>
+            <div className="kpi-sub">{totNet?((totTRN/totNet)*100).toFixed(1)+"% of total":""}</div>
+          </div>
+          <div className="kpi">
             <div className="kpi-lbl">Uncategorised</div>
             <div className="kpi-val" style={{color:"#E24B4A"}}>{fmtMYR(Math.abs(totUnc))}</div>
             <div className="kpi-sub">{cntUnc} invoices</div>
@@ -563,6 +571,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                       <option value="LIC">LIC</option>
                       <option value="HW">HW</option>
                       <option value="AMS">AMS</option>
+                      <option value="TRN">Training</option>
                     </select>;
                   }else if(singleSplit){
                     typeBdg=<CatBadge cat={singleSplit.category}/>;
@@ -861,6 +870,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
               <span>HW: <strong>{fmtMYR(totHW)}</strong></span>
               <div className="foot-dot" style={{background:"#1B5E20"}}/>
               <span>AMS: <strong>{fmtMYR(totAMS)}</strong></span>
+              <div className="foot-dot" style={{background:"#F57F17"}}/>
+              <span>Training: <strong>{fmtMYR(totTRN)}</strong></span>
               <div className="foot-dot" style={{background:"#e8e7e0"}}/>
               <span>Uncategorised: <strong>{fmtMYR(totUnc)}</strong></span>
             </div>
