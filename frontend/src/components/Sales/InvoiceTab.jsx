@@ -588,6 +588,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         <option value="LIC">LIC</option>
                         <option value="HW">HW</option>
                         <option value="AMS">AMS</option>
+                        <option value="TRN">Training</option>
                       </select>;
                   }
 
@@ -789,6 +790,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                   <option value="LIC">LIC</option>
                                   <option value="HW">HW</option>
                                   <option value="AMS">AMS</option>
+                                  <option value="TRN">Training</option>
                                 </select>
                               </div>
                             </td>
@@ -927,6 +929,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                       <option value="LIC">LIC</option>
                       <option value="HW">HW</option>
                       <option value="AMS">AMS</option>
+                      <option value="TRN">Training</option>
                     </select></td>
                   <td><span className="new-line-lbl">End User</span>
                     <input type="text" placeholder="End user" style={{width:100}}
