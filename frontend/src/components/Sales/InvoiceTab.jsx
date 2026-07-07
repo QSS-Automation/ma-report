@@ -202,7 +202,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
   const isLocked=d=>lockedPeriods.includes(d.slice(0,7));
 
-  let totNet=0,totPS=0,totLIC=0,totHW=0,totAMS=0,totUnc=0,cntUnc=0;
+  let totNet=0,totPS=0,totLIC=0,totHW=0,totAMS=0,totTRN=0,totUnc=0,cntUnc=0;
   invoices.forEach(inv=>{
     const n=Number(inv.amount);totNet+=n;
     if(inv.splits&&inv.splits.length){
