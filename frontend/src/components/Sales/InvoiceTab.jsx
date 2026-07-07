@@ -512,7 +512,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
               value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
 
-          <div style={{overflowX:"auto",overflowY:"auto",width:"100%"}}>
+          <div style={{overflowX:"auto",overflowY:"auto",width:"100%",maxHeight:"calc(100vh - 380px)"}}>
             <table style={{tableLayout:"fixed",borderCollapse:"collapse",minWidth:tableMinWidth}}>
               <thead style={{position:"sticky",top:0,zIndex:1}}>
                 <tr>
