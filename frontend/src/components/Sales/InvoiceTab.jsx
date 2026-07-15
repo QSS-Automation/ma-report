@@ -382,7 +382,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const handleNewLine=async()=>{
     const f=newLineRef.current;
     try{
-      await saveManualLine({journal_type:tab==="sales"?"SALES":"PURCHASE",
+      const res=await saveManualLine({journal_type:tab==="sales"?"SALES":"PURCHASE",
         trans_date:f.date||new Date().toISOString().slice(0,10),acc_no:f.accNo||"",
         de_acc_desc:f.deAcc||"",proj_no:f.proj||"",ref_no1:f.ref||"",
         description:f.desc||"",
