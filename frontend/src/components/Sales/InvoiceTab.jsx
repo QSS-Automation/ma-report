@@ -392,6 +392,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         category:f.cat||null,end_user:f.eu||null,
         start_date:f.sd||null,end_date:f.ed||null,remark:f.rm||"",
         user:user?.user_id||"user",entity});
+      if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       setNewLineOpen(false);showToast("✓ New deferred line saved");run();
     }catch(e){showToast("⚠ "+e.message);}
   };
