@@ -378,25 +378,29 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       }
     }catch(e){showToast("⚠ "+e.message);}
   };
-
   const handleNewLine=async()=>{
     const f=newLineRef.current;
+    const dr=parseFloat((f.hdr||"").replace(/,/g,""))||0;
+    const cr=parseFloat((f.hcr||"").replace(/,/g,""))||0;
+    const amt=Math.abs(dr-cr);
+    const cat=f.cat||"PS";
+    if(amt<=0){showToast("⚠ Please enter Home DR or Home CR amount");return;}
+    if(!f.sd||!f.ed){showToast("⚠ Please enter Start Date and End Date");return;}
     try{
       const res=await saveManualLine({journal_type:tab==="sales"?"SALES":"PURCHASE",
         trans_date:f.date||new Date().toISOString().slice(0,10),acc_no:f.accNo||"",
         de_acc_desc:f.deAcc||"",proj_no:f.proj||"",ref_no1:f.ref||"",
         description:f.desc||"",
-        home_dr:parseFloat((f.hdr||"").replace(/,/g,""))||0,
-        home_cr:parseFloat((f.hcr||"").replace(/,/g,""))||0,
-        split_amount:parseFloat((f.hdr||"").replace(/,/g,""))||0,
-        category:f.cat||null,end_user:f.eu||null,
+        home_dr:dr,
+        home_cr:cr,
+        split_amount:amt,
+        category:cat,end_user:f.eu||null,
         start_date:f.sd||null,end_date:f.ed||null,remark:f.rm||"",
         user:user?.user_id||"user",entity});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       setNewLineOpen(false);showToast("✓ New deferred line saved");run();
     }catch(e){showToast("⚠ "+e.message);}
   };
-
   const exportCSV=()=>{
     if(!invoices.length){showToast("⚠ No data to export.");return;}
     const headers=["Date","Acc No","Acc Desc","Project Code","Ref 1","Ref 2",
