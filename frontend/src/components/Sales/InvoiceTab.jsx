@@ -173,6 +173,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [unlockModal,setUnlockModal]=useState({open:false,invNo:""});
   const [taskModal,setTaskModal]=useState(false);
   const [newLineOpen,setNewLineOpen]=useState(false);
+  const [newLineSaving,setNewLineSaving]=useState(false);
   const [search,setSearch]=useState("");
   const [sortKey,setSortKey]=useState("trans_date");
   const [sortDir,setSortDir]=useState("desc");
@@ -386,6 +387,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     const cat=f.cat||"PS";
     if(amt<=0){showToast("⚠ Please enter Home DR or Home CR amount");return;}
     if(!f.sd||!f.ed){showToast("⚠ Please enter Start Date and End Date");return;}
+    setNewLineSaving(true);
     try{
       const res=await saveManualLine({journal_type:tab==="sales"?"SALES":"PURCHASE",
         trans_date:f.date||new Date().toISOString().slice(0,10),acc_no:f.accNo||"",
@@ -400,6 +402,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       setNewLineOpen(false);showToast("✓ New deferred line saved");run();
     }catch(e){showToast("⚠ "+e.message);}
+    finally{setNewLineSaving(false);}
   };
   const exportCSV=()=>{
     if(!invoices.length){showToast("⚠ No data to export.");return;}
@@ -939,7 +942,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                       style={{width:110,fontSize:11,border:"1px solid #e8e7e0",
                               borderRadius:4,padding:"3px 6px",marginBottom:3,display:"block"}}
                       onChange={e=>{newLineRef.current.rm=e.target.value;}}/>
-                    <button className="btn-save" onClick={handleNewLine} style={{marginRight:4}}>Save</button>
+                    <button className="btn-save" onClick={handleNewLine} disabled={newLineSaving} style={{marginRight:4}}>{newLineSaving?"Saving…":"Save"}</button>
                     <button className="btn-del" onClick={()=>setNewLineOpen(false)}>✕</button>
                   </td>
                   <td/>
