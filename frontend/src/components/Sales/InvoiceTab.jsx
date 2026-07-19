@@ -400,7 +400,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         start_date:f.sd||null,end_date:f.ed||null,remark:f.rm||"",
         user:user?.user_id||"user",entity});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
-      setNewLineOpen(false);showToast("✓ New deferred line saved");run();
+      setNewLineOpen(false);showToast("✓ New deferred line saved — refreshing in 8s…");
+      setTimeout(()=>{showToast("✓ Refreshed");run();}, 8000);
     }catch(e){showToast("⚠ "+e.message);}
     finally{setNewLineSaving(false);}
   };
