@@ -1,5 +1,5 @@
 import React,{useState,useCallback,useEffect} from "react";
-import {getPnl, getBs,refreshStaging }from"../../services/api";
+import {getPnl, getBs, refreshStaging, exportExcel} from "../../services/api";
 import {useMonthPicker} from "../../hooks/useMonthPicker";
 import MonthPicker from "../Shared/MonthPicker";
 import {fmtMYRK,numFmt,MN} from "../../utils/fmt";
@@ -59,6 +59,10 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
     return r?r.months.reduce((a,b)=>a+(Number(b)||0),0):0;
   };
   const ns=kpi("NET_SALES"),gp=kpi("GROSS_PROFIT"),pbt=kpi("NET_PROFIT_BEFORE"),pat=kpi("NET_PROFIT_AFTER");
+  const handleExportExcel = () => {
+    if (!data) { showToast("⚠ Run report first."); return; }
+    window.open(exportExcel(entity, mp.fromStr, mp.toStr), '_blank');
+};
   const exportCSV = () => {
   if (!data) { showToast("⚠ Run report first."); return; }
   const headers = ["Section","Label","Row Type", ...data.month_labels, "Total"];
@@ -89,6 +93,7 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
           style={{background:rebuilding?"#888780":"#6B7280", marginRight:6, color:"white"}}>
           {rebuilding?"Rebuilding…":"Refresh"}
         </button>
+        <button className="pg-btn" onClick={handleExportExcel} style={{marginRight:4}}>Export Full Excel</button>
         <button className="pg-btn" onClick={exportCSV}>Export CSV</button>
       </div>
       </div>
