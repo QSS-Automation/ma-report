@@ -59,9 +59,17 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
     return r?r.months.reduce((a,b)=>a+(Number(b)||0),0):0;
   };
   const ns=kpi("NET_SALES"),gp=kpi("GROSS_PROFIT"),pbt=kpi("NET_PROFIT_BEFORE"),pat=kpi("NET_PROFIT_AFTER");
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     if (!data) { showToast("⚠ Run report first."); return; }
-    window.open(exportExcel(entity, mp.fromStr, mp.toStr), '_blank');
+    try {
+        const res = await exportExcel(entity, mp.fromStr, mp.toStr);
+        const url = window.URL.createObjectURL(new Blob([res.data]));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `MA_Report_${entity}_${mp.fromStr}_${mp.toStr}.xlsx`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    } catch(e) { showToast("⚠ Export failed: " + e.message); }
 };
   const exportCSV = () => {
   if (!data) { showToast("⚠ Run report first."); return; }
