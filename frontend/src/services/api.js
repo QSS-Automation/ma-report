@@ -20,5 +20,6 @@ export const createTask     = (data)                   => API.post("/api/tasks",
 export const updateTask     = (id, data)               => API.patch(`/api/tasks/${id}`,           data);
 export const getOrderList   = (entity)                 => API.get("/api/order-list", { params: { entity } });
 export const unlockSplit = (data) => API.post("/api/mfrs/unlock", data);
+export const exportExcel = (entity, from, to)          => API.get("/api/export/excel", {params: { entity, from_date: from, to_date: to },responseType: 'blob'});
 
 export default API;
