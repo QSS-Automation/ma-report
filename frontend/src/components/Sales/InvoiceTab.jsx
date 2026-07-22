@@ -5,7 +5,7 @@ import MonthPicker from "../Shared/MonthPicker";
 import LockModal from "../Shared/LockModal";
 import UnlockModal from "../Shared/UnlockModal";
 import TaskModal from "../Shared/TaskModal";
-import {getSales,getPurchases,saveSplits,saveManualLine,lockPeriod} from "../../services/api";
+import {getSales,getPurchases,saveSplits,saveManualLine,lockPeriod,getAccounts} from "../../services/api";
 import {fmtMYR,fmtDateShort,MN} from "../../utils/fmt";
 import {showToast} from "../../utils/toast";
 import {useAuth} from "../../context/AuthContext";
@@ -184,7 +184,13 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [rowState,setRowState]=useState({});
   const [editState,setEditState]=useState({});
   const newLineRef=useRef({});
-
+  const [accounts,setAccounts]=useState([]);
+  useEffect(()=>{
+      if(!newLineOpen) return;
+      getAccounts(entity,tab==="sales"?"SALES":"PURCHASE")
+          .then(res=>setAccounts(res.data))
+          .catch(()=>{});
+  },[newLineOpen,entity,tab]);
   useEffect(()=>{setInvoices([]);},[entity]);
 
   const toggleExpand=sk=>setExpanded(p=>({...p,[sk]:!p[sk]}));
@@ -898,12 +904,22 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                 <tr className="new-line-row">
                   <td><span className="new-line-lbl">Date</span>
                     <input type="date" onChange={e=>{newLineRef.current.date=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">Acc. No.</span>
-                    <input type="text" placeholder="e.g. 300-0000" style={{width:100}}
-                      onChange={e=>{newLineRef.current.accNo=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">Acc. Desc.</span>
-                    <input type="text" placeholder="Account description" style={{width:120}}
-                      onChange={e=>{newLineRef.current.deAcc=e.target.value;}}/></td>
+                  <td colSpan={2}><span className="new-line-lbl">Account</span>
+                      <select style={{width:220,fontSize:11,padding:"3px 6px",
+                                     border:"1px solid #e8e7e0",borderRadius:4}}
+                        onChange={e=>{
+                          const opt = e.target.options[e.target.selectedIndex];
+                          newLineRef.current.accNo = opt.value;
+                          newLineRef.current.deAcc = opt.dataset.desc;
+                        }}>
+                        <option value="">— Select account</option>
+                        {accounts.map(a=>(
+                          <option key={a.acc_no} value={a.acc_no} data-desc={a.acc_desc}>
+                            {a.acc_no} — {a.acc_desc}
+                          </option>
+                        ))}
+                      </select>
+                  </td>
                   <td><span className="new-line-lbl">Project Code</span>
                     <input type="text" placeholder="PRJ-001" style={{width:90}}
                       onChange={e=>{newLineRef.current.proj=e.target.value;}}/></td>
