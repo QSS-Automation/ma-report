@@ -437,8 +437,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const isSales=tab==="sales";
   const noun=isSales?"Sales":"Purchases";
   const periodLbl=mp.fromLabel===mp.toLabel?mp.fromLabel:mp.fromLabel+"–"+mp.toLabel;
-  const colSpanFull=isSales?17:18;
-  const tableMinWidth=isSales?1468:1868;
+  const colSpanFull=isSales?18:19;
+  const tableMinWidth=isSales?1568 : 1968;
 
   return(
     <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",minHeight:0}}>
@@ -563,6 +563,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   <ColHeader label="Date"         col="trans_date"  minWidth={70}  {...chProps}/>
                   <ColHeader label="Acc. No."     col="acc_no"      minWidth={90}  {...chProps}/>
                   <ColHeader label="Acc. Desc."   col="acc_desc"    minWidth={130} {...chProps}/>
+                  <ColHeader label="Debtor Desc." col="de_acc_desc" minWidth={150} {...chProps}/>
                   <ColHeader label="Project Code" col="proj_no"     minWidth={110} {...chProps}/>
                   <ColHeader label="Ref. 1"       col="ref_no1"     minWidth={110} {...chProps}/>
                   {!isSales&&<ColHeader label="Ref. 2" col="ref_no2" minWidth={100} {...chProps}/>}
@@ -621,6 +622,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                       <tr className={"row-hover"+(locked?" row-locked":"")+(inEdit?" row-split":"")}>
                         <td className="muted">{fmtDateShort(inv.trans_date)}</td>
                         <td className="mono muted" style={{fontSize:11}}>{inv.acc_no||"—"}</td>
+                        <td className="muted" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {inv.acc_desc||"—"}
+                        </td>
                         <td className="muted" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                           {inv.de_acc_desc||"—"}
                         </td>
