@@ -4,6 +4,7 @@ import { showToast } from "../../utils/toast";
 import { useAuth } from "../../context/AuthContext";
 import { getTasks, createTask, updateTask } from "../../services/api";
 
+
 const ST_META = {
   open:           { label: "Open",           cls: "task-st-open"      },
   inprog:         { label: "In Progress",    cls: "task-st-inprog"    },
@@ -66,8 +67,10 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
       setModal(false);
       showToast("✓ Task created.");
     } catch (e) {
-      showToast("⚠ Failed to create task: " + e.message);
-    }
+        console.error("createTask error:", e);
+        console.error("error response:", e.response?.data);
+        showToast("⚠ Failed to create task: " + e.message);
+  }
   };
 
   // ── Update task status — saves to DB then reloads ───────────────
