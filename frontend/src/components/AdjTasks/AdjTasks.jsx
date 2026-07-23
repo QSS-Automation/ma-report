@@ -276,10 +276,11 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
       </div>
 
       <TaskModal
-        open={modal}
-        defaultSrc="sales"
-        onClose={() => setModal(false)}
-        onSave={create}
+          key={modal ? "open" : "closed"}
+          open={modal}
+          defaultSrc="sales"
+          onClose={() => setModal(false)}
+          onSave={create}
       />
     </div>
   );
