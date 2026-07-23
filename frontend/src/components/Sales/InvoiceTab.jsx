@@ -264,7 +264,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   });
 
   const COL_FIELD={
-    trans_date:"trans_date",acc_no:"acc_no",acc_desc:"de_acc_desc",
+    trans_date:"trans_date",acc_no:"acc_no",acc_desc:"acc_desc",de_acc_desc:"de_acc_desc",
     proj_no:"proj_no",ref_no1:"ref_no1",ref_no2:"ref_no2",
     description:"description",home_dr:"home_dr",home_cr:"home_cr",amount:"amount",
     category:"category"
