@@ -185,10 +185,14 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [editState,setEditState]=useState({});
   const newLineRef=useRef({});
   const [accounts,setAccounts]=useState([]);
+  const [deAccounts,setDeAccounts]=useState([]);
   useEffect(()=>{
       if(!newLineOpen) return;
       getAccounts(entity,tab==="sales"?"SALES":"PURCHASE")
-          .then(res=>setAccounts(res.data))
+          .then(res => {
+              setAccounts(res.data.accounts || []);
+              setDeAccounts(res.data.de_accounts || []);
+          })
           .catch(()=>{});
   },[newLineOpen,entity,tab]);
   useEffect(()=>{setInvoices([]);},[entity]);
@@ -396,7 +400,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     setNewLineSaving(true);
     try{
       const res=await saveManualLine({journal_type:tab==="sales"?"SALES":"PURCHASE",
-        trans_date:f.date||new Date().toISOString().slice(0,10),acc_no:f.accNo||"",
+        trans_date:f.date||new Date().toISOString().slice(0,10),acc_no:f.accNo||"",de_acc_no:  f.deAccNo ||"",
         de_acc_desc:f.deAcc||"",proj_no:f.proj||"",ref_no1:f.ref||"",
         description:f.desc||"",
         home_dr:dr,
@@ -922,6 +926,21 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             {a.acc_no} — {a.acc_desc}
                           </option>
                         ))}
+                      </select>
+                  </td>
+                  <td colSpan={2}><span className="new-line-lbl">Debtor / Creditor</span>
+                      <select style={{width:220,fontSize:11,padding:"3px 6px",
+                                     border:"1px solid #e8e7e0",borderRadius:4}}
+                          defaultValue=""
+                          onChange={e=>{
+                              newLineRef.current.deAccNo=e.target.value;
+                          }}>
+                          <option value="">— Select debtor/creditor</option>
+                          {deAccounts.map(a=>(
+                              <option key={a.acc_no} value={a.acc_no}>
+                                  {a.acc_no} — {a.acc_desc}
+                              </option>
+                          ))}
                       </select>
                   </td>
                   <td><span className="new-line-lbl">Project Code</span>
