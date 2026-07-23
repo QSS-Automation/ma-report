@@ -46,12 +46,14 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
   if (!open) return null;
   const u = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
+
   const handleSave = () => {
+    console.log("handleSave called", form);
     if (!form.todo.trim()) { alert("Please enter a task title."); return; }
     if (!form.assignee)    { alert("Please select an assignee."); return; }
+    console.log("calling onSave with", form);
     onSave(form);
-  };
-
+};
   return (
     <div className="modal-bg" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{ width: 460 }}>
