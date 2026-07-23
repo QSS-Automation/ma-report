@@ -173,7 +173,7 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
         <select className="f-sel" value={fSrc} onChange={e => setFSrc(e.target.value)}>
           <option value="all">All</option>
           <option value="sales">Sales</option>
-          <option value="pur">Purchases</option>
+          <option value="purchases">Purchases</option>
         </select>
       </div>
 
