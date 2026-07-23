@@ -70,7 +70,7 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
         console.error("createTask error:", e);
         console.error("error response:", e.response?.data);
         showToast("⚠ Failed to create task: " + e.message);
-  }
+    }
   };
 
   // ── Update task status — saves to DB then reloads ───────────────
