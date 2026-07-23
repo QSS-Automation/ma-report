@@ -9,18 +9,23 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
   const [form, setForm] = useState({
     todo: "", desc: "", remark: "",
     src: defaultSrc || "sales",
-    assignee: isManager ? (users[0]?.user_id || "") : (user?.user_id || ""),
+    assignee: isManager ? "" : (user?.user_id || ""),
     due: ""
   });
   const [users, setUsers] = useState([]);
 
+  // Load users and default assignee when modal opens
   useEffect(() => {
-    if (open && isManager) {
+    if (!open) return;
+    if (isManager) {
       API.get("/api/auth/users")
         .then(r => {
-          // Fix: ensure r.data is always an array
           const data = Array.isArray(r.data) ? r.data : [];
           setUsers(data);
+          // Default to first user so assignee is never empty
+          if (data.length > 0) {
+            setForm(f => ({ ...f, assignee: f.assignee || data[0].user_id }));
+          }
         })
         .catch(() => setUsers([]));
     }
@@ -41,6 +46,12 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
   if (!open) return null;
   const u = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
+  const handleSave = () => {
+    if (!form.todo.trim()) { alert("Please enter a task title."); return; }
+    if (!form.assignee)    { alert("Please select an assignee."); return; }
+    onSave(form);
+  };
+
   return (
     <div className="modal-bg" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{ width: 460 }}>
@@ -51,7 +62,7 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
           <label>Source</label>
           <select value={form.src} onChange={u("src")}>
             <option value="sales">Sales</option>
-            <option value="pur">Purchases</option>
+            <option value="purchases">Purchases</option>
           </select>
         </div>
 
@@ -76,7 +87,6 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div className="modal-field" style={{ marginBottom: 0 }}>
             <label>Assigned To</label>
-            {/* Role-gate the assignee field */}
             {isManager ? (
               <select value={form.assignee} onChange={u("assignee")}>
                 <option value="">— Select assignee</option>
@@ -107,8 +117,7 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
 
         <div className="modal-actions">
           <button className="btn-modal-cancel" onClick={onClose}>Cancel</button>
-          <button className="btn-modal-submit"
-            onClick={() => { if (form.todo.trim() && form.assignee) onSave(form); }}>
+          <button className="btn-modal-submit" onClick={handleSave}>
             Create Task
           </button>
         </div>
