@@ -9,7 +9,7 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
   const [form, setForm] = useState({
     todo: "", desc: "", remark: "",
     src: defaultSrc || "sales",
-    assignee: isManager ? "" : (user?.user_id || ""),
+    assignee: isManager ? (users[0]?.user_id || "") : (user?.user_id || ""),
     due: ""
   });
   const [users, setUsers] = useState([]);
