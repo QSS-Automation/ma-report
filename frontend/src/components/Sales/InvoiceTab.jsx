@@ -5,10 +5,11 @@ import MonthPicker from "../Shared/MonthPicker";
 import LockModal from "../Shared/LockModal";
 import UnlockModal from "../Shared/UnlockModal";
 import TaskModal from "../Shared/TaskModal";
-import {getSales,getPurchases,saveSplits,saveManualLine,lockPeriod,getAccounts} from "../../services/api";
+import {getSales,getPurchases,saveSplits,saveManualLine,lockPeriod,getAccounts,createTask} from "../../services/api";
 import {fmtMYR,fmtDateShort,MN} from "../../utils/fmt";
 import {showToast} from "../../utils/toast";
 import {useAuth} from "../../context/AuthContext";
+
 
 const FETCH={sales:getSales,pur:getPurchases};
 
@@ -999,7 +1000,25 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
         onClose={()=>setUnlockModal({open:false,invNo:""})}
         onSubmit={()=>{setUnlockModal({open:false,invNo:""});showToast("🔓 Unlock request submitted.");}}/>
       <TaskModal open={taskModal} defaultSrc={tab} onClose={()=>setTaskModal(false)}
-        onSave={()=>{setTaskModal(false);showToast("✓ Task created.");}}/>
+        onSave={async(form)=>{
+            try{
+                await createTask({
+                    entity,
+                    todo:        form.todo,
+                    description: form.desc,
+                    remark:      form.remark,
+                    source:      tab==="sales"?"sales":"purchases",
+                    assigned_to: form.assignee,
+                    due_date:    form.due,
+                    task_type:   "general",
+                    created_by:  user?.user_id,
+                });
+                setTaskModal(false);
+                showToast("✓ Task created.");
+            }catch(e){
+                showToast("⚠ Failed to create task: "+e.message);
+            }
+        }}/>
     </div>
   );
 }
