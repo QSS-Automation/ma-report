@@ -47,7 +47,7 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
 
   // ── Create task — saves to DB then reloads ──────────────────────
   const create = async (form) => {
-    console.log("create called with form:", form);
+    console.log("create called", form);
     try {
       const payload = {
         entity:      entity,
