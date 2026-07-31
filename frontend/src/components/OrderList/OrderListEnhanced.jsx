@@ -68,6 +68,30 @@ function aggStatus(lines, field, closedValues) {
 const BILLING_CLOSED = ["Invoiced", "Credit Noted", "Cancelled"];
 const PAYMENT_CLOSED = ["Fully Paid", "Credit Noted", "Cancelled"];
 
+// One combined status: "Closed" only when BOTH billing and payment are
+// fully closed; "Open" if either side still has something outstanding.
+function combinedStatus(billingAgg, paymentAgg) {
+  return billingAgg === "Closed" && paymentAgg === "Closed" ? "Closed" : "Open";
+}
+
+// Human-readable billing label across a set of lines: Fully/Partially/Not Billed.
+function billingDisplay(lines, field) {
+  if (!lines.length) return "Not Billed";
+  const closedCount = lines.filter(r => BILLING_CLOSED.includes(r[field])).length;
+  if (closedCount === lines.length) return "Fully Billed";
+  if (closedCount === 0) return "Not Billed";
+  return "Partially Billed";
+}
+
+// Human-readable payment label across a set of lines: Fully/Partially Paid/Unpaid.
+function paymentDisplay(lines) {
+  if (!lines.length) return "Unpaid";
+  const closedCount = lines.filter(r => PAYMENT_CLOSED.includes(r.payment_status)).length;
+  if (closedCount === lines.length) return "Fully Paid";
+  if (closedCount === 0) return "Unpaid";
+  return "Partially Paid";
+}
+
 // ── Build project tree from flat SO/PO lists ───────────────────────────────
 // proj -> { soMap: { so_no -> { lines[], poMap: { po_no -> { lines[] } } } },
 //           unlinkedPoMap: { po_no -> { lines[] } } }
@@ -135,31 +159,32 @@ function PoGroup({ po }) {
   const rawBilling = po.lines[0]?.po_billing_status;
   const billingAgg = rawBilling === "Fully Billed" ? "Closed" : "Open";
   const paymentAgg = aggStatus(po.lines, "payment_status", PAYMENT_CLOSED);
+  const overall     = combinedStatus(billingAgg, paymentAgg);
+  const payDisplay  = paymentDisplay(po.lines);
 
   return (
-    <div style={{ border: "0.5px solid #e8e7e0", borderRadius: 6, overflow: "hidden", marginBottom: 6 }}>
-      {/* PO header — PO number on top, not inline with items */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", background: "#fafaf8", borderBottom: "0.5px solid #e8e7e0" }}>
-        <span className="mono" style={{ fontSize: 11, fontWeight: 500, color: "#185FA5" }}>{po.po_no || "—"}</span>
-        <span style={{ fontSize: 10, color: "#888780" }}>{po.po_date ? po.po_date.slice(0, 10) : ""}</span>
-        <StatusBadge status={billingAgg} />
-        <StatusBadge status={paymentAgg} />
-        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "#E24B4A", fontFamily: "monospace" }}>
+    <>
+      {/* PO header row — same row style/height as a Sales line, just bold + badges */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
+        <span className="mono" style={{ fontWeight: 500, color: "#185FA5", flexShrink: 0 }}>{po.po_no || "—"}</span>
+        <span style={{ fontSize: 10, color: "#888780", flexShrink: 0 }}>{po.po_date ? po.po_date.slice(0, 10) : ""}</span>
+        <StatusBadge status={overall} />
+        <StatusBadge status={rawBilling || "Not Billed"} />
+        <StatusBadge status={payDisplay} />
+        <span style={{ marginLeft: "auto", fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>
           {fmtMYR(poAmt)}
         </span>
       </div>
-      {/* PO item lines */}
-      <div style={{ padding: "4px 10px" }}>
-        {po.lines.map((r, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: i < po.lines.length - 1 ? "0.5px solid #f0f0ee" : "none", fontSize: 12 }}>
-            <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
-              {r.description || r.item_code || "—"}
-            </span>
-            <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.po_amount)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
+      {/* PO item lines — plain rows, same style as Sales lines */}
+      {po.lines.map((r, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0 5px 14px", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
+          <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
+            {r.description || r.item_code || "—"}
+          </span>
+          <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.po_amount)}</span>
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -449,13 +474,14 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                     const soKey  = `${projNo}__${soNo}`;
                     const isSoOpen = soExp[soKey];
                     const poGroups = Object.values(so.poMap);
-                    const { soAmt, poAmt, label: soBasisLabel } = basisAmounts(so.lines, poGroups.flatMap(g => g.lines), level);
-                    const { gm, gmPct } = calcGM(soAmt, poAmt);
 
                     // Aggregate across ALL lines in this SO — not just the first —
                     // so a partially-invoiced/paid SO doesn't get mislabeled.
                     const soBillingAgg = aggStatus(so.lines, "billing_status", BILLING_CLOSED);
                     const soPaymentAgg = aggStatus(so.lines, "payment_status", PAYMENT_CLOSED);
+                    const soOverall    = combinedStatus(soBillingAgg, soPaymentAgg);
+                    const soBillDisplay = billingDisplay(so.lines, "billing_status");
+                    const soPayDisplay  = paymentDisplay(so.lines);
 
                     return (
                       <div key={soNo} style={{ border: "0.5px solid #e8e7e0", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
@@ -468,13 +494,9 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                           <span style={{ fontSize: 10, color: "#888780" }}>
                             {so.so_date ? so.so_date.slice(0, 10) : ""}
                           </span>
-                          <StatusBadge status={soBillingAgg} />
-                          <StatusBadge status={soPaymentAgg} />
-                          <div style={{ display: "flex", gap: 14, marginLeft: "auto", fontSize: 11 }}>
-                            <span>SO {soBasisLabel}: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(soAmt)}</strong></span>
-                            <span>PO {soBasisLabel}: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(poAmt)}</strong></span>
-                            <span>GM: <GmBadge pct={gmPct} /></span>
-                          </div>
+                          <StatusBadge status={soOverall} />
+                          <StatusBadge status={soBillDisplay} />
+                          <StatusBadge status={soPayDisplay} />
                         </div>
 
                         {/* SO detail */}
