@@ -249,6 +249,7 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
 function PaneTable({ title, type, rows }) {
   const isSales = type === "sales";
   const total   = rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+  const docNos  = new Set(rows.map(r => r.ref_no1).filter(Boolean)).size;
 
   return (
     <div style={{
