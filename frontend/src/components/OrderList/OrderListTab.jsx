@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { getOrderList } from "../../services/api";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { getOrderList, getOrderListEnhanced } from "../../services/api";
 import { fmtMYR } from "../../utils/fmt";
 import { showToast } from "../../utils/toast";
+import OrderListEnhanced from "./OrderListEnhanced";
 
 const fmtDate = (s) => {
   if (!s) return "—";
@@ -10,19 +11,21 @@ const fmtDate = (s) => {
 };
 
 export default function OrderListTab({ entity = "QM", setEntity, entities = [] }) {
-  const [rows, setRows]         = useState([]);
-  const [loading, setLoading]   = useState(false);
-  const [search, setSearch]     = useState("");
-  const [expanded, setExpanded] = useState({});
+  const [tab,       setTab]       = useState("classic"); // "classic" | "enhanced"
+  const [rows,      setRows]      = useState([]);
+  const [loading,   setLoading]   = useState(false);
+  const [search,    setSearch]    = useState("");
+  const [expanded,  setExpanded]  = useState({});
 
   useEffect(() => {
+    if (tab !== "classic") return;
     setLoading(true);
     setExpanded({});
     getOrderList(entity)
       .then(r => setRows(r.data || []))
       .catch(e => showToast("⚠ " + e.message))
       .finally(() => setLoading(false));
-  }, [entity]);
+  }, [entity, tab]);
 
   const projects = useMemo(() => {
     const map = {};
@@ -45,15 +48,15 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
 
   const summary = proj => {
     const { sales, purchases } = projects[proj];
-    const ts = sales.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-    const tp = purchases.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-    const gm = ts - tp;
+    const ts  = sales.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    const tp  = purchases.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    const gm  = ts - tp;
     const pct = ts > 0 ? (gm / ts) * 100 : 0;
     return { ts, tp, gm, pct };
   };
 
-  const allSales     = rows.filter(r => r.journal_type === "SALES");
-  const allPurchases = rows.filter(r => r.journal_type === "PURCHASE");
+  const allSales     = Object.values(projects).flatMap(p => p.sales);
+  const allPurchases = Object.values(projects).flatMap(p => p.purchases);
   const totSales     = allSales.reduce((a, r) => a + (Number(r.amount) || 0), 0);
   const totPurch     = allPurchases.reduce((a, r) => a + (Number(r.amount) || 0), 0);
   const totMargin    = totSales - totPurch;
@@ -62,6 +65,7 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", minHeight: 0 }}>
 
+      {/* ── Page header ──────────────────────────────────────── */}
       <div className="pg-hdr">
         <div className="pg-title">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#185FA5" strokeWidth="1.5">
@@ -72,6 +76,7 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
         </div>
       </div>
 
+      {/* ── Filter bar ───────────────────────────────────────── */}
       <div className="filter">
         <span className="f-lbl">Entity</span>
         <select className="f-sel" value={entity} onChange={e => setEntity(e.target.value)}>
@@ -80,132 +85,163 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
           ))}
         </select>
         <div className="f-div"/>
-        <span className="f-lbl">Project</span>
-        <input
-          className="search"
-          style={{ width: 220, fontSize: 12 }}
-          placeholder="Search project code…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        <span className="f-lbl" style={{ marginLeft: 8 }}>
-          {loading ? "Loading…" : `${filtered.length} project${filtered.length !== 1 ? "s" : ""}`}
-        </span>
+
+        {/* Tab toggle */}
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            className="pg-btn"
+            style={tab === "classic" ? { background: "var(--bg-accent)", color: "var(--text-accent)", borderColor: "var(--border-accent)" } : {}}
+            onClick={() => setTab("classic")}>
+            Classic
+          </button>
+          <button
+            className="pg-btn"
+            style={tab === "enhanced" ? { background: "var(--bg-accent)", color: "var(--text-accent)", borderColor: "var(--border-accent)" } : {}}
+            onClick={() => setTab("enhanced")}>
+            Enhanced ✦
+          </button>
+        </div>
+
+        {tab === "classic" && <>
+          <div className="f-div"/>
+          <span className="f-lbl">Project</span>
+          <input
+            className="search"
+            style={{ width: 220, fontSize: 12 }}
+            placeholder="Search project code…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <span className="f-lbl" style={{ marginLeft: 8 }}>
+            {loading ? "Loading…" : `${filtered.length} project${filtered.length !== 1 ? "s" : ""}`}
+          </span>
+        </>}
       </div>
 
-      <div style={{ padding: "14px 18px", flexShrink: 0, background: "#fff", borderBottom: "1px solid #e8e7e0" }}>
-        <div className="kpi-row" style={{ marginBottom: 0 }}>
-          <div className="kpi">
-            <div className="kpi-lbl">Total Sales</div>
-            <div className="kpi-val b">{fmtMYR(totSales)}</div>
-            <div className="kpi-sub">{allSales.length} lines · {Object.keys(projects).length} projects</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Total Purchases</div>
-            <div className="kpi-val a">{fmtMYR(totPurch)}</div>
-            <div className="kpi-sub">{allPurchases.length} lines</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Gross Margin</div>
-            <div className="kpi-val" style={{ color: totMargin >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-              {fmtMYR(totMargin)}
+      {/* ── Classic tab ──────────────────────────────────────── */}
+      {tab === "classic" && <>
+        <div style={{ padding: "14px 18px", flexShrink: 0, background: "#fff", borderBottom: "1px solid #e8e7e0" }}>
+          <div className="kpi-row" style={{ marginBottom: 0 }}>
+            <div className="kpi">
+              <div className="kpi-lbl">Total Sales</div>
+              <div className="kpi-val b">{fmtMYR(totSales)}</div>
+              <div className="kpi-sub">{allSales.length} lines · {Object.keys(projects).length} projects</div>
             </div>
-            <div className="kpi-sub">{totPct.toFixed(1)}% of sales</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Margin %</div>
-            <div className="kpi-val" style={{ color: totMargin >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-              {totPct.toFixed(1)}%
+            <div className="kpi">
+              <div className="kpi-lbl">Total Purchases</div>
+              <div className="kpi-val a">{fmtMYR(totPurch)}</div>
+              <div className="kpi-sub">{allPurchases.length} lines</div>
             </div>
-            <div className="kpi-sub">{entity} · all projects</div>
+            <div className="kpi">
+              <div className="kpi-lbl">Gross Margin</div>
+              <div className="kpi-val" style={{ color: totMargin >= 0 ? "#0C9B6E" : "#E24B4A" }}>
+                {fmtMYR(totMargin)}
+              </div>
+              <div className="kpi-sub">{totPct.toFixed(1)}% of sales</div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-lbl">Margin %</div>
+              <div className="kpi-val" style={{ color: totMargin >= 0 ? "#0C9B6E" : "#E24B4A" }}>
+                {totPct.toFixed(1)}%
+              </div>
+              <div className="kpi-sub">{entity} · all projects</div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="content">
-        {loading && (
-          <div style={{ padding: "2rem", textAlign: "center", color: "#888780", fontSize: 13 }}>
-            Loading…
-          </div>
-        )}
-
-        {!loading && filtered.length === 0 && (
-          <div className="card">
+        <div className="content">
+          {loading && (
             <div style={{ padding: "2rem", textAlign: "center", color: "#888780", fontSize: 13 }}>
-              No projects found.
+              Loading…
             </div>
-          </div>
-        )}
+          )}
 
-        {!loading && filtered.map(proj => {
-          const { ts, tp, gm, pct } = summary(proj);
-          const { sales, purchases } = projects[proj];
-          const isOpen = !!expanded[proj];
-
-          return (
-            <div key={proj} className="card" style={{ marginBottom: 8 }}>
-              <div
-                className="card-hdr"
-                style={{ cursor: "pointer", userSelect: "none" }}
-                onClick={() => toggle(proj)}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, flexWrap: "wrap" }}>
-                  <span style={{
-                    fontSize: 10, color: "#888780", width: 12, display: "inline-block",
-                    transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
-                    transition: "transform 0.15s",
-                  }}>▶</span>
-                  <span className="card-title" style={{ minWidth: 160, fontSize: 13 }}>
-                    {proj}
-                  </span>
-                  <span className="bdg bdg-ps" style={{ fontSize: 10 }}>
-                    {sales.length} sales
-                  </span>
-                  <span className="bdg bdg-lic" style={{ fontSize: 10 }}>
-                    {purchases.length} purchases
-                  </span>
-                  <div style={{ display: "flex", gap: 24, marginLeft: "auto", flexWrap: "wrap" }}>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 10, color: "#888780" }}>Sales</div>
-                      <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(ts)}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 10, color: "#888780" }}>Purchases</div>
-                      <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(tp)}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 10, color: "#888780" }}>Gross Margin</div>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: gm >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-                        {fmtMYR(gm)}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 10, color: "#888780" }}>Margin %</div>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: gm >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-                        {pct.toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          {!loading && filtered.length === 0 && (
+            <div className="card">
+              <div style={{ padding: "2rem", textAlign: "center", color: "#888780", fontSize: 13 }}>
+                No projects found.
               </div>
+            </div>
+          )}
 
-              {isOpen && (
-                <div style={{ padding: 12 }}>
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)",
-                    gap: 10,
-                    alignItems: "stretch",
-                  }}>
-                    <PaneTable title="Sales"     type="sales"     rows={sales}     />
-                    <PaneTable title="Purchases" type="purchases" rows={purchases} />
+          {!loading && filtered.map(proj => {
+            const { ts, tp, gm, pct } = summary(proj);
+            const { sales, purchases } = projects[proj];
+            const isOpen = !!expanded[proj];
+
+            return (
+              <div key={proj} className="card" style={{ marginBottom: 8 }}>
+                <div
+                  className="card-hdr"
+                  style={{ cursor: "pointer", userSelect: "none" }}
+                  onClick={() => toggle(proj)}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, flexWrap: "wrap" }}>
+                    <span style={{
+                      fontSize: 10, color: "#888780", width: 12, display: "inline-block",
+                      transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+                      transition: "transform 0.15s",
+                    }}>▶</span>
+                    <span className="card-title" style={{ minWidth: 160, fontSize: 13 }}>
+                      {proj}
+                    </span>
+                    <span className="bdg bdg-ps" style={{ fontSize: 10 }}>
+                      {sales.length} sales
+                    </span>
+                    <span className="bdg bdg-lic" style={{ fontSize: 10 }}>
+                      {purchases.length} purchases
+                    </span>
+                    <div style={{ display: "flex", gap: 24, marginLeft: "auto", flexWrap: "wrap" }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 10, color: "#888780" }}>Sales</div>
+                        <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(ts)}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 10, color: "#888780" }}>Purchases</div>
+                        <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(tp)}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 10, color: "#888780" }}>Gross Margin</div>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: gm >= 0 ? "#0C9B6E" : "#E24B4A" }}>
+                          {fmtMYR(gm)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 10, color: "#888780" }}>Margin %</div>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: gm >= 0 ? "#0C9B6E" : "#E24B4A" }}>
+                          {pct.toFixed(1)}%
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+
+                {isOpen && (
+                  <div style={{ padding: 12 }}>
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)",
+                      gap: 10,
+                      alignItems: "stretch",
+                    }}>
+                      <PaneTable title="Sales"     type="sales"     rows={sales}     />
+                      <PaneTable title="Purchases" type="purchases" rows={purchases} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </>}
+
+      {/* ── Enhanced tab ─────────────────────────────────────── */}
+      {tab === "enhanced" && (
+        <div style={{ flex: 1, overflow: "auto" }}>
+          <OrderListEnhanced entity={entity} />
+        </div>
+      )}
+
     </div>
   );
 }
@@ -213,7 +249,6 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
 function PaneTable({ title, type, rows }) {
   const isSales = type === "sales";
   const total   = rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-  const docNos  = new Set(rows.map(r => r.ref_no1)).size;
 
   return (
     <div style={{
