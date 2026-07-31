@@ -150,7 +150,7 @@ function PoGroup({ po }) {
         <span className="mono" style={{ fontWeight: 500, color: "#185FA5", flexShrink: 0 }}>{po.po_no || "—"}</span>
         <span style={{ fontSize: 10, color: "#888780", flexShrink: 0 }}>{po.po_date ? po.po_date.slice(0, 10) : ""}</span>
         <StatusBadge status={overall} />
-        <span style={{ marginLeft: "auto", fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>
+        <span style={{ marginLeft: "auto", fontWeight: 500, color: "#333", fontFamily: "monospace", flexShrink: 0 }}>
           {fmtMYR(poAmt)}
         </span>
       </div>
@@ -461,6 +461,7 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                     const soBillingAgg = aggStatus(so.lines, "billing_status", BILLING_CLOSED);
                     const soPaymentAgg = aggStatus(so.lines, "payment_status", PAYMENT_CLOSED);
                     const soOverall    = combinedStatus(soBillingAgg, soPaymentAgg);
+                    const { soAmt } = basisAmounts(so.lines, [], level);
 
                     return (
                       <div key={soNo} style={{ border: "0.5px solid #e8e7e0", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
@@ -484,6 +485,15 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                             <div style={{ padding: "8px 12px", borderRight: "0.5px solid #e8e7e0" }}>
                               <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
                                 Sales (SO lines)
+                              </div>
+                              {/* SO-number row — mirrors the PO group header so both panes line up row-for-row */}
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
+                                <span className="mono" style={{ fontWeight: 500, color: "#185FA5", flexShrink: 0 }}>{soNo}</span>
+                                <span style={{ fontSize: 10, color: "#888780", flexShrink: 0 }}>{so.so_date ? so.so_date.slice(0, 10) : ""}</span>
+                                <StatusBadge status={soOverall} />
+                                <span style={{ marginLeft: "auto", fontWeight: 500, color: "#333", fontFamily: "monospace", flexShrink: 0 }}>
+                                  {fmtMYR(soAmt)}
+                                </span>
                               </div>
                               {so.lines.map((r, i) => (
                                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
@@ -527,7 +537,7 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                   <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "8px 0", borderTop: "0.5px solid #e8e7e0", fontSize: 11 }}>
                     <span>Total SO {basisLabel}: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(projSOAmt)}</strong></span>
                     <span>Total PO {basisLabel}: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(projPOAmt)}</strong></span>
-                    <span>Gross Margin: <strong style={{ fontFamily: "monospace" }}>{fmtMYR(projGM)}</strong> <GmBadge pct={projGMPct} /></span>
+                    <span>Gross Margin: <strong style={{ fontFamily: "monospace", color: projGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(projGM)}</strong> <GmBadge pct={projGMPct} /></span>
                   </div>
                 </div>
               )}
