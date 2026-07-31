@@ -12,6 +12,7 @@ function StatusBadge({ status }) {
     "Not Billed":      { bg: "#F5F5F5", color: "#616161" },
     "Invoiced":        { bg: "#E3F2FD", color: "#0D47A1" },
     "Open":            { bg: "#F5F5F5", color: "#9E9E9E" },
+    "Closed":          { bg: "#E8F5E9", color: "#1B5E20" },
     "Cancelled":       { bg: "#F3E5F5", color: "#4A148C" },
     "Credit Noted":    { bg: "#FFF3E0", color: "#E65100" },
     "Fully Billed":    { bg: "#E8F5E9", color: "#1B5E20" },
@@ -37,32 +38,85 @@ function GmBadge({ pct }) {
   );
 }
 
+// ── Aggregation helpers ─────────────────────────────────────────────────────
+// Sum a numeric field across a set of lines.
+const sumBy = (arr, field) => arr.reduce((s, r) => s + Number(r[field] || 0), 0);
+
+// Sum a numeric field, de-duplicated by a key (used where the value is a
+// doc-level total repeated across every detail line — e.g. billed_amount,
+// paid_amount — so a straight sum would double-count).
+function sumUniqueBy(arr, keyField, valField) {
+  const seen = new Map();
+  arr.forEach(r => {
+    const k = r[keyField];
+    if (k && !seen.has(k)) seen.set(k, Number(r[valField] || 0));
+  });
+  let total = 0;
+  seen.forEach(v => { total += v; });
+  return total;
+}
+
+// "Open" if ANY line still has something outstanding for this status field
+// (i.e. its value is NOT in the closed set); "Closed" only if every line's
+// value is in the closed set.
+function aggStatus(lines, field, closedValues) {
+  if (!lines.length) return "Open";
+  const allClosed = lines.every(r => closedValues.includes(r[field]));
+  return allClosed ? "Closed" : "Open";
+}
+
+const BILLING_CLOSED = ["Invoiced", "Credit Noted", "Cancelled"];
+const PAYMENT_CLOSED = ["Fully Paid", "Credit Noted", "Cancelled"];
+
 // ── Build project tree from flat SO/PO lists ───────────────────────────────
+// proj -> { soMap: { so_no -> { lines[], poMap: { po_no -> { lines[] } } } },
+//           unlinkedPoMap: { po_no -> { lines[] } } }
 function buildTree(soLines, poLines) {
   const projMap = {};
 
   soLines.forEach(r => {
-    if (!projMap[r.proj_no]) projMap[r.proj_no] = { soMap: {}, unlinked_po: [] };
+    if (!projMap[r.proj_no]) projMap[r.proj_no] = { soMap: {}, unlinkedPoMap: {} };
     if (!projMap[r.proj_no].soMap[r.so_no])
-      projMap[r.proj_no].soMap[r.so_no] = { so_no: r.so_no, so_date: r.so_date, lines: [], po: [] };
+      projMap[r.proj_no].soMap[r.so_no] = { so_no: r.so_no, so_date: r.so_date, lines: [], poMap: {} };
     projMap[r.proj_no].soMap[r.so_no].lines.push(r);
   });
 
   poLines.forEach(r => {
+    if (!projMap[r.proj_no]) projMap[r.proj_no] = { soMap: {}, unlinkedPoMap: {} };
     const proj = projMap[r.proj_no];
-    if (!proj) {
-      if (!projMap[r.proj_no]) projMap[r.proj_no] = { soMap: {}, unlinked_po: [] };
-      projMap[r.proj_no].unlinked_po.push(r);
-      return;
-    }
-    if (r.linked_so_no && proj.soMap[r.linked_so_no]) {
-      proj.soMap[r.linked_so_no].po.push(r);
+    const so = r.linked_so_no ? proj.soMap[r.linked_so_no] : null;
+
+    if (so) {
+      if (!so.poMap[r.po_no]) so.poMap[r.po_no] = { po_no: r.po_no, po_date: r.po_date, lines: [] };
+      so.poMap[r.po_no].lines.push(r);
     } else {
-      proj.unlinked_po.push(r);
+      if (!proj.unlinkedPoMap[r.po_no]) proj.unlinkedPoMap[r.po_no] = { po_no: r.po_no, po_date: r.po_date, lines: [] };
+      proj.unlinkedPoMap[r.po_no].lines.push(r);
     }
   });
 
   return projMap;
+}
+
+// Pick the right amount basis for a subset of SO/PO lines depending on the
+// selected filter level — committed uses raw SO/PO amounts, accrued uses
+// billed amounts, realised uses paid amounts (de-duped by doc key).
+function basisAmounts(soLines, poLines, level) {
+  if (level === "accrued") {
+    return {
+      soAmt: sumUniqueBy(soLines, "iv_no", "iv_amount"),
+      poAmt: sumUniqueBy(poLines, "po_no", "billed_amount"),
+      label: "Billed",
+    };
+  }
+  if (level === "realised") {
+    return {
+      soAmt: sumUniqueBy(soLines, "iv_no", "paid_amount"),
+      poAmt: sumUniqueBy(poLines, "pi_no", "paid_amount"),
+      label: "Paid",
+    };
+  }
+  return { soAmt: sumBy(soLines, "so_amount"), poAmt: sumBy(poLines, "po_amount"), label: "Amount" };
 }
 
 // ── Calculate GM ───────────────────────────────────────────────────────────
@@ -70,6 +124,43 @@ function calcGM(soAmt, poAmt) {
   const gm    = soAmt - poAmt;
   const gmPct = soAmt > 0 ? (gm / soAmt) * 100 : null;
   return { gm, gmPct };
+}
+
+// ── PO group block (used both for SO-linked PO groups and unlinked POs) ────
+function PoGroup({ po }) {
+  const poAmt = sumBy(po.lines, "po_amount");
+  // po_billing_status is already a doc-level aggregate from the curated layer
+  // (Fully Billed / Partially Billed / Not Billed) — identical across all
+  // lines of the same po_no, so it's safe to read off the first line.
+  const rawBilling = po.lines[0]?.po_billing_status;
+  const billingAgg = rawBilling === "Fully Billed" ? "Closed" : "Open";
+  const paymentAgg = aggStatus(po.lines, "payment_status", PAYMENT_CLOSED);
+
+  return (
+    <div style={{ border: "0.5px solid #e8e7e0", borderRadius: 6, overflow: "hidden", marginBottom: 6 }}>
+      {/* PO header — PO number on top, not inline with items */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", background: "#fafaf8", borderBottom: "0.5px solid #e8e7e0" }}>
+        <span className="mono" style={{ fontSize: 11, fontWeight: 500, color: "#185FA5" }}>{po.po_no || "—"}</span>
+        <span style={{ fontSize: 10, color: "#888780" }}>{po.po_date ? po.po_date.slice(0, 10) : ""}</span>
+        <StatusBadge status={billingAgg} />
+        <StatusBadge status={paymentAgg} />
+        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "#E24B4A", fontFamily: "monospace" }}>
+          {fmtMYR(poAmt)}
+        </span>
+      </div>
+      {/* PO item lines */}
+      <div style={{ padding: "4px 10px" }}>
+        {po.lines.map((r, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "4px 0", borderBottom: i < po.lines.length - 1 ? "0.5px solid #f0f0ee" : "none", fontSize: 12 }}>
+            <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
+              {r.description || r.item_code || "—"}
+            </span>
+            <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.po_amount)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
@@ -107,13 +198,28 @@ export default function OrderListEnhanced({ entity = "QM" }) {
 
   // Grand totals across all loaded data (unaffected by search filter)
   const allSoLines = Object.values(tree).flatMap(p => Object.values(p.soMap).flatMap(so => so.lines));
-  const allPoLines  = Object.values(tree).flatMap(p =>
-    Object.values(p.soMap).flatMap(so => so.po).concat(p.unlinked_po)
+  const allPoLines = Object.values(tree).flatMap(p =>
+    Object.values(p.soMap).flatMap(so => Object.values(so.poMap).flatMap(g => g.lines))
+      .concat(Object.values(p.unlinkedPoMap).flatMap(g => g.lines))
   );
-  const totSO   = allSoLines.reduce((s, r) => s + Number(r.so_amount || 0), 0);
-  const totPO   = allPoLines.reduce((s, r) => s + Number(r.po_amount || 0), 0);
-  const totGM   = totSO - totPO;
-  const totPct  = totSO > 0 ? (totGM / totSO) * 100 : 0;
+
+  const totSO  = sumBy(allSoLines, "so_amount");
+  const totPO  = sumBy(allPoLines, "po_amount");
+  const totGM  = totSO - totPO;
+  const totPct = totSO > 0 ? (totGM / totSO) * 100 : 0;
+
+  // Accrued-level metrics: billed & paid amounts, de-duped by doc key
+  const soBilledAmt = sumUniqueBy(allSoLines, "iv_no", "iv_amount");
+  const soPaidAmt    = sumUniqueBy(allSoLines, "iv_no", "paid_amount");
+  const poBilledAmt = sumUniqueBy(allPoLines, "po_no", "billed_amount");
+  const poPaidAmt    = sumUniqueBy(allPoLines, "pi_no", "paid_amount");
+
+  // Margin basis changes with the selected filter:
+  // committed → SO/PO amount, accrued → billed amount, realised → paid amount
+  const accruedGM  = soBilledAmt - poBilledAmt;
+  const accruedPct = soBilledAmt > 0 ? (accruedGM / soBilledAmt) * 100 : 0;
+  const realisedGM  = soPaidAmt - poPaidAmt;
+  const realisedPct = soPaidAmt > 0 ? (realisedGM / soPaidAmt) * 100 : 0;
 
   return (
     <div>
@@ -147,34 +253,125 @@ export default function OrderListEnhanced({ entity = "QM" }) {
         </button>
       </div>
 
-      {/* ── KPI summary row ─────────────────────────────────────── */}
+      {/* ── KPI summary row(s) — content depends on selected level ─ */}
       <div style={{ padding: "14px 18px", background: "#fff", borderBottom: "1px solid #e8e7e0" }}>
-        <div className="kpi-row" style={{ marginBottom: 0 }}>
-          <div className="kpi">
-            <div className="kpi-lbl">Total Sales (SO)</div>
-            <div className="kpi-val b">{fmtMYR(totSO)}</div>
-            <div className="kpi-sub">{allSoLines.length} lines · {Object.keys(tree).length} projects</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Total Purchases (PO)</div>
-            <div className="kpi-val a">{fmtMYR(totPO)}</div>
-            <div className="kpi-sub">{allPoLines.length} lines</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Gross Margin</div>
-            <div className="kpi-val" style={{ color: totGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-              {fmtMYR(totGM)}
+
+        {level === "committed" && (
+          <div className="kpi-row" style={{ marginBottom: 0 }}>
+            <div className="kpi">
+              <div className="kpi-lbl">Total Sales (SO)</div>
+              <div className="kpi-val b">{fmtMYR(totSO)}</div>
+              <div className="kpi-sub">{allSoLines.length} lines · {Object.keys(tree).length} projects</div>
             </div>
-            <div className="kpi-sub">{totPct.toFixed(1)}% of sales</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Margin %</div>
-            <div className="kpi-val" style={{ color: totGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-              {totPct.toFixed(1)}%
+            <div className="kpi">
+              <div className="kpi-lbl">Total Purchases (PO)</div>
+              <div className="kpi-val a">{fmtMYR(totPO)}</div>
+              <div className="kpi-sub">{allPoLines.length} lines</div>
             </div>
-            <div className="kpi-sub">{entity} · {level}</div>
+            <div className="kpi">
+              <div className="kpi-lbl">Gross Margin</div>
+              <div className="kpi-val" style={{ color: totGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(totGM)}</div>
+              <div className="kpi-sub">{totPct.toFixed(1)}% of sales</div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-lbl">Margin %</div>
+              <div className="kpi-val" style={{ color: totGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{totPct.toFixed(1)}%</div>
+              <div className="kpi-sub">{entity} · {level}</div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {level === "accrued" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Sales (SO)</div>
+              <div className="kpi-row" style={{ marginBottom: 0 }}>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total SO Amount</div>
+                  <div className="kpi-val b">{fmtMYR(totSO)}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total Billed Amount</div>
+                  <div className="kpi-val">{fmtMYR(soBilledAmt)}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total Paid Amount</div>
+                  <div className="kpi-val" style={{ color: "#0C9B6E" }}>{fmtMYR(soPaidAmt)}</div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Purchases (PO)</div>
+              <div className="kpi-row" style={{ marginBottom: 0 }}>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total PO Amount</div>
+                  <div className="kpi-val a">{fmtMYR(totPO)}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total Billed Amount</div>
+                  <div className="kpi-val">{fmtMYR(poBilledAmt)}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total Paid Amount</div>
+                  <div className="kpi-val" style={{ color: "#E24B4A" }}>{fmtMYR(poPaidAmt)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="kpi-row" style={{ marginBottom: 0 }}>
+              <div className="kpi">
+                <div className="kpi-lbl">Gross Margin (Billed)</div>
+                <div className="kpi-val" style={{ color: accruedGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(accruedGM)}</div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-lbl">Margin %</div>
+                <div className="kpi-val" style={{ color: accruedGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{accruedPct.toFixed(1)}%</div>
+                <div className="kpi-sub">Billed SO vs Billed PO</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {level === "realised" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Sales (SO)</div>
+              <div className="kpi-row" style={{ marginBottom: 0 }}>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total SO Amount</div>
+                  <div className="kpi-val b">{fmtMYR(totSO)}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total Paid Amount</div>
+                  <div className="kpi-val" style={{ color: "#0C9B6E" }}>{fmtMYR(soPaidAmt)}</div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Purchases (PO)</div>
+              <div className="kpi-row" style={{ marginBottom: 0 }}>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total PO Amount</div>
+                  <div className="kpi-val a">{fmtMYR(totPO)}</div>
+                </div>
+                <div className="kpi">
+                  <div className="kpi-lbl">Total Paid Amount</div>
+                  <div className="kpi-val" style={{ color: "#E24B4A" }}>{fmtMYR(poPaidAmt)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="kpi-row" style={{ marginBottom: 0 }}>
+              <div className="kpi">
+                <div className="kpi-lbl">Gross Margin (Realised)</div>
+                <div className="kpi-val" style={{ color: realisedGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(realisedGM)}</div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-lbl">Margin %</div>
+                <div className="kpi-val" style={{ color: realisedGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{realisedPct.toFixed(1)}%</div>
+                <div className="kpi-sub">Paid SO vs Paid PO</div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Content ────────────────────────────────────────────── */}
@@ -196,14 +393,14 @@ export default function OrderListEnhanced({ entity = "QM" }) {
         {!loading && projKeys.map(projNo => {
           const proj    = tree[projNo];
           const soKeys  = Object.keys(proj.soMap);
+          const unlinkedPoKeys = Object.keys(proj.unlinkedPoMap);
           const isOpen  = expanded[projNo];
 
-          // Project totals
-          const projSOAmt = soKeys.reduce((s, k) =>
-            s + proj.soMap[k].lines.reduce((ss, r) => ss + Number(r.so_amount || 0), 0), 0);
-          const projPOAmt = soKeys.reduce((s, k) =>
-            s + proj.soMap[k].po.reduce((ss, r) => ss + Number(r.po_amount || 0), 0), 0)
-            + proj.unlinked_po.reduce((s, r) => s + Number(r.po_amount || 0), 0);
+          const projSoLines = soKeys.flatMap(k => proj.soMap[k].lines);
+          const projPoLines = soKeys.flatMap(k => Object.values(proj.soMap[k].poMap).flatMap(g => g.lines))
+            .concat(unlinkedPoKeys.flatMap(k => proj.unlinkedPoMap[k].lines));
+
+          const { soAmt: projSOAmt, poAmt: projPOAmt, label: basisLabel } = basisAmounts(projSoLines, projPoLines, level);
           const { gm: projGM, gmPct: projGMPct } = calcGM(projSOAmt, projPOAmt);
 
           return (
@@ -219,16 +416,16 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                 }}>▶</span>
                 <span className="card-title" style={{ minWidth: 160, fontSize: 13 }}>{projNo}</span>
                 <span className="bdg bdg-ps" style={{ fontSize: 10 }}>{soKeys.length} SO</span>
-                {proj.unlinked_po.length > 0 && (
-                  <span className="bdg bdg-lic" style={{ fontSize: 10 }}>+{proj.unlinked_po.length} unlinked PO</span>
+                {unlinkedPoKeys.length > 0 && (
+                  <span className="bdg bdg-lic" style={{ fontSize: 10 }}>+{unlinkedPoKeys.length} unlinked PO</span>
                 )}
                 <div style={{ display: "flex", gap: 24, marginLeft: "auto", flexWrap: "wrap" }}>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: "#888780" }}>Sales</div>
+                    <div style={{ fontSize: 10, color: "#888780" }}>Total SO {basisLabel}</div>
                     <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(projSOAmt)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: "#888780" }}>Purchases</div>
+                    <div style={{ fontSize: 10, color: "#888780" }}>Total PO {basisLabel}</div>
                     <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(projPOAmt)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
@@ -251,13 +448,14 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                     const so     = proj.soMap[soNo];
                     const soKey  = `${projNo}__${soNo}`;
                     const isSoOpen = soExp[soKey];
-                    const soAmt  = so.lines.reduce((s, r) => s + Number(r.so_amount || 0), 0);
-                    const poAmt  = so.po.reduce((s, r) => s + Number(r.po_amount || 0), 0);
+                    const poGroups = Object.values(so.poMap);
+                    const { soAmt, poAmt, label: soBasisLabel } = basisAmounts(so.lines, poGroups.flatMap(g => g.lines), level);
                     const { gm, gmPct } = calcGM(soAmt, poAmt);
 
-                    // Derive SO billing/payment status from lines
-                    const soBilling = so.lines[0]?.billing_status || "—";
-                    const soPayment = so.lines[0]?.payment_status || "—";
+                    // Aggregate across ALL lines in this SO — not just the first —
+                    // so a partially-invoiced/paid SO doesn't get mislabeled.
+                    const soBillingAgg = aggStatus(so.lines, "billing_status", BILLING_CLOSED);
+                    const soPaymentAgg = aggStatus(so.lines, "payment_status", PAYMENT_CLOSED);
 
                     return (
                       <div key={soNo} style={{ border: "0.5px solid #e8e7e0", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
@@ -270,11 +468,11 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                           <span style={{ fontSize: 10, color: "#888780" }}>
                             {so.so_date ? so.so_date.slice(0, 10) : ""}
                           </span>
-                          <StatusBadge status={soBilling} />
-                          <StatusBadge status={soPayment} />
+                          <StatusBadge status={soBillingAgg} />
+                          <StatusBadge status={soPaymentAgg} />
                           <div style={{ display: "flex", gap: 14, marginLeft: "auto", fontSize: 11 }}>
-                            <span>Sales: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(soAmt)}</strong></span>
-                            <span>Cost: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(poAmt)}</strong></span>
+                            <span>SO {soBasisLabel}: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(soAmt)}</strong></span>
+                            <span>PO {soBasisLabel}: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(poAmt)}</strong></span>
                             <span>GM: <GmBadge pct={gmPct} /></span>
                           </div>
                         </div>
@@ -293,30 +491,20 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                                   <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
                                     {r.description || r.item_code || "—"}
                                   </span>
-                                  <StatusBadge status={r.payment_status} />
                                   <span style={{ fontWeight: 500, color: "#0C9B6E", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.so_amount)}</span>
                                 </div>
                               ))}
                             </div>
 
-                            {/* PO lines */}
+                            {/* PO groups — grouped by PO number, number shown as a header */}
                             <div style={{ padding: "8px 12px" }}>
                               <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
-                                Purchases (PO lines)
+                                Purchases (PO)
                               </div>
-                              {so.po.length === 0 && (
+                              {poGroups.length === 0 && (
                                 <div style={{ fontSize: 12, color: "#888780", fontStyle: "italic" }}>No linked PO</div>
                               )}
-                              {so.po.map((r, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
-                                  <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
-                                    <span className="mono" style={{ color: "#185FA5", marginRight: 6 }}>{r.po_no || "—"}</span>
-                                    {r.description || r.item_code || "—"}
-                                  </span>
-                                  <StatusBadge status={r.payment_status} />
-                                  <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.po_amount)}</span>
-                                </div>
-                              ))}
+                              {poGroups.map(g => <PoGroup key={g.po_no} po={g} />)}
                             </div>
                           </div>
                         )}
@@ -325,27 +513,19 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                   })}
 
                   {/* Unlinked PO section */}
-                  {proj.unlinked_po.length > 0 && (
+                  {unlinkedPoKeys.length > 0 && (
                     <div style={{ borderTop: "0.5px dashed #e8e7e0", paddingTop: 8 }}>
                       <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
                         Purchases not linked to any SO
                       </div>
-                      {proj.unlinked_po.map((r, i) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 8px", fontSize: 12 }}>
-                          <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
-                            {r.po_no} — {r.description || r.item_code || "—"}
-                          </span>
-                          <StatusBadge status={r.payment_status} />
-                          <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.po_amount)}</span>
-                        </div>
-                      ))}
+                      {unlinkedPoKeys.map(k => <PoGroup key={k} po={proj.unlinkedPoMap[k]} />)}
                     </div>
                   )}
 
                   {/* Project footer */}
                   <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "8px 0", borderTop: "0.5px solid #e8e7e0", fontSize: 11 }}>
-                    <span>Total Sales: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(projSOAmt)}</strong></span>
-                    <span>Total Cost: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(projPOAmt)}</strong></span>
+                    <span>Total SO {basisLabel}: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(projSOAmt)}</strong></span>
+                    <span>Total PO {basisLabel}: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(projPOAmt)}</strong></span>
                     <span>Gross Margin: <strong style={{ fontFamily: "monospace" }}>{fmtMYR(projGM)}</strong> <GmBadge pct={projGMPct} /></span>
                   </div>
                 </div>
