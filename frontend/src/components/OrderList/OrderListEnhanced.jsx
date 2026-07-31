@@ -126,7 +126,8 @@ export default function OrderListEnhanced({ entity = "QM" }) {
           </button>
         ))}
         <input
-          style={{ marginLeft: "auto", fontSize: 11, padding: "4px 8px", border: "0.5px solid var(--border)", borderRadius: "var(--radius)", background: "var(--surface-1)", color: "var(--text-primary)", width: 160 }}
+          className="search"
+          style={{ marginLeft: "auto", width: 180, fontSize: 12 }}
           placeholder="Search project, SO…"
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -137,16 +138,18 @@ export default function OrderListEnhanced({ entity = "QM" }) {
       </div>
 
       {/* ── Content ────────────────────────────────────────────── */}
-      <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8, background: "#fff" }}>
         {loading && (
-          <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)", fontSize: 12 }}>
+          <div style={{ textAlign: "center", padding: 40, color: "#888780", fontSize: 12 }}>
             Loading…
           </div>
         )}
 
         {!loading && projKeys.length === 0 && (
-          <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)", fontSize: 12 }}>
-            No data found.
+          <div className="card">
+            <div style={{ textAlign: "center", padding: "2rem", color: "#888780", fontSize: 13 }}>
+              No data found.
+            </div>
           </div>
         )}
 
@@ -164,35 +167,44 @@ export default function OrderListEnhanced({ entity = "QM" }) {
           const { gm: projGM, gmPct: projGMPct } = calcGM(projSOAmt, projPOAmt);
 
           return (
-            <div key={projNo} style={{ border: "0.5px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--surface-2)" }}>
+            <div key={projNo} className="card" style={{ marginBottom: 8 }}>
 
               {/* Project header */}
-              <div onClick={() => toggleProj(projNo)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--surface-1)", borderBottom: isOpen ? "0.5px solid var(--border)" : "none", cursor: "pointer" }}>
-                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{isOpen ? "▾" : "▸"}</span>
-                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--text-accent)" }}>{projNo}</span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>
-                  {soKeys.length} SO · {proj.unlinked_po.length > 0 ? `+${proj.unlinked_po.length} unlinked PO` : ""}
-                </span>
-                <div style={{ display: "flex", gap: 16, marginLeft: "auto", fontSize: 11 }}>
+              <div className="card-hdr" onClick={() => toggleProj(projNo)}
+                style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }}>
+                <span style={{
+                  fontSize: 10, color: "#888780", width: 12, display: "inline-block",
+                  transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+                  transition: "transform 0.15s",
+                }}>▶</span>
+                <span className="card-title" style={{ minWidth: 160, fontSize: 13 }}>{projNo}</span>
+                <span className="bdg bdg-ps" style={{ fontSize: 10 }}>{soKeys.length} SO</span>
+                {proj.unlinked_po.length > 0 && (
+                  <span className="bdg bdg-lic" style={{ fontSize: 10 }}>+{proj.unlinked_po.length} unlinked PO</span>
+                )}
+                <div style={{ display: "flex", gap: 24, marginLeft: "auto", flexWrap: "wrap" }}>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase" }}>Sales</div>
-                    <div style={{ fontWeight: 500, color: "var(--text-success)", fontFamily: "monospace" }}>{fmtMYR(projSOAmt)}</div>
+                    <div style={{ fontSize: 10, color: "#888780" }}>Sales</div>
+                    <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(projSOAmt)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase" }}>Cost</div>
-                    <div style={{ fontWeight: 500, color: "var(--text-danger)", fontFamily: "monospace" }}>{fmtMYR(projPOAmt)}</div>
+                    <div style={{ fontSize: 10, color: "#888780" }}>Purchases</div>
+                    <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(projPOAmt)}</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase" }}>GM</div>
-                    <GmBadge pct={projGMPct} />
+                    <div style={{ fontSize: 10, color: "#888780" }}>Gross Margin</div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: projGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(projGM)}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 10, color: "#888780" }}>Margin %</div>
+                    <div style={{ fontSize: 12, fontWeight: 500 }}><GmBadge pct={projGMPct} /></div>
                   </div>
                 </div>
               </div>
 
               {/* Project body */}
               {isOpen && (
-                <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "#fff" }}>
 
                   {/* SO rows */}
                   {soKeys.map(soNo => {
@@ -208,60 +220,60 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                     const soPayment = so.lines[0]?.payment_status || "—";
 
                     return (
-                      <div key={soNo} style={{ border: "0.5px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden" }}>
+                      <div key={soNo} style={{ border: "0.5px solid #e8e7e0", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
 
                         {/* SO header */}
                         <div onClick={() => toggleSO(soKey)}
-                          style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", background: "var(--surface-1)", borderBottom: isSoOpen ? "0.5px solid var(--border)" : "none", cursor: "pointer" }}>
-                          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{isSoOpen ? "▾" : "▸"}</span>
+                          style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", background: "#fafaf8", borderBottom: isSoOpen ? "0.5px solid #e8e7e0" : "none", cursor: "pointer" }}>
+                          <span style={{ fontSize: 10, color: "#888780" }}>{isSoOpen ? "▾" : "▸"}</span>
                           <span style={{ fontSize: 11, fontWeight: 500 }}>{soNo}</span>
-                          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                          <span style={{ fontSize: 10, color: "#888780" }}>
                             {so.so_date ? so.so_date.slice(0, 10) : ""}
                           </span>
                           <StatusBadge status={soBilling} />
                           <StatusBadge status={soPayment} />
                           <div style={{ display: "flex", gap: 14, marginLeft: "auto", fontSize: 11 }}>
-                            <span>Sales: <strong style={{ color: "var(--text-success)", fontFamily: "monospace" }}>{fmtMYR(soAmt)}</strong></span>
-                            <span>Cost: <strong style={{ color: "var(--text-danger)", fontFamily: "monospace" }}>{fmtMYR(poAmt)}</strong></span>
+                            <span>Sales: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(soAmt)}</strong></span>
+                            <span>Cost: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(poAmt)}</strong></span>
                             <span>GM: <GmBadge pct={gmPct} /></span>
                           </div>
                         </div>
 
                         {/* SO detail */}
                         {isSoOpen && (
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, background: "#fff" }}>
 
                             {/* Sales lines */}
-                            <div style={{ padding: "8px 12px", borderRight: "0.5px solid var(--border)" }}>
-                              <div style={{ fontSize: 10, fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                            <div style={{ padding: "8px 12px", borderRight: "0.5px solid #e8e7e0" }}>
+                              <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
                                 Sales (SO lines)
                               </div>
                               {so.lines.map((r, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "0.5px solid var(--border)", fontSize: 11 }}>
-                                  <span style={{ color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }} title={r.description}>
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 11 }}>
+                                  <span style={{ color: "#333", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }} title={r.description}>
                                     {r.description || r.item_code || "—"}
                                   </span>
                                   <StatusBadge status={r.payment_status} />
-                                  <span style={{ fontWeight: 500, color: "var(--text-success)", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.so_amount)}</span>
+                                  <span style={{ fontWeight: 500, color: "#0C9B6E", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.so_amount)}</span>
                                 </div>
                               ))}
                             </div>
 
                             {/* PO lines */}
                             <div style={{ padding: "8px 12px" }}>
-                              <div style={{ fontSize: 10, fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                              <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
                                 Purchases (PO lines)
                               </div>
                               {so.po.length === 0 && (
-                                <div style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>No linked PO</div>
+                                <div style={{ fontSize: 11, color: "#888780", fontStyle: "italic" }}>No linked PO</div>
                               )}
                               {so.po.map((r, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "0.5px solid var(--border)", fontSize: 11 }}>
-                                  <span style={{ color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }} title={r.description}>
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 11 }}>
+                                  <span style={{ color: "#333", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }} title={r.description}>
                                     {r.description || r.item_code || "—"}
                                   </span>
                                   <StatusBadge status={r.payment_status} />
-                                  <span style={{ fontWeight: 500, color: "var(--text-danger)", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.po_amount)}</span>
+                                  <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.po_amount)}</span>
                                 </div>
                               ))}
                             </div>
@@ -273,26 +285,26 @@ export default function OrderListEnhanced({ entity = "QM" }) {
 
                   {/* Unlinked PO section */}
                   {proj.unlinked_po.length > 0 && (
-                    <div style={{ borderTop: "0.5px dashed var(--border)", paddingTop: 8 }}>
-                      <div style={{ fontSize: 10, fontWeight: 500, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                    <div style={{ borderTop: "0.5px dashed #e8e7e0", paddingTop: 8 }}>
+                      <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
                         Purchases not linked to any SO
                       </div>
                       {proj.unlinked_po.map((r, i) => (
                         <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 8px", fontSize: 11 }}>
-                          <span style={{ color: "var(--text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }} title={r.description}>
+                          <span style={{ color: "#333", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }} title={r.description}>
                             {r.po_no} — {r.description || r.item_code || "—"}
                           </span>
                           <StatusBadge status={r.payment_status} />
-                          <span style={{ fontWeight: 500, color: "var(--text-danger)", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.po_amount)}</span>
+                          <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.po_amount)}</span>
                         </div>
                       ))}
                     </div>
                   )}
 
                   {/* Project footer */}
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "8px 0", borderTop: "0.5px solid var(--border)", fontSize: 11 }}>
-                    <span>Total Sales: <strong style={{ color: "var(--text-success)", fontFamily: "monospace" }}>{fmtMYR(projSOAmt)}</strong></span>
-                    <span>Total Cost: <strong style={{ color: "var(--text-danger)", fontFamily: "monospace" }}>{fmtMYR(projPOAmt)}</strong></span>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "8px 0", borderTop: "0.5px solid #e8e7e0", fontSize: 11 }}>
+                    <span>Total Sales: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(projSOAmt)}</strong></span>
+                    <span>Total Cost: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(projPOAmt)}</strong></span>
                     <span>Gross Margin: <strong style={{ fontFamily: "monospace" }}>{fmtMYR(projGM)}</strong> <GmBadge pct={projGMPct} /></span>
                   </div>
                 </div>
