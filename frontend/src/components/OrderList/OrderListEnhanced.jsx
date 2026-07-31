@@ -105,6 +105,16 @@ export default function OrderListEnhanced({ entity = "QM" }) {
     Object.keys(tree[p].soMap).some(s => s.toLowerCase().includes(search.toLowerCase()))
   );
 
+  // Grand totals across all loaded data (unaffected by search filter)
+  const allSoLines = Object.values(tree).flatMap(p => Object.values(p.soMap).flatMap(so => so.lines));
+  const allPoLines  = Object.values(tree).flatMap(p =>
+    Object.values(p.soMap).flatMap(so => so.po).concat(p.unlinked_po)
+  );
+  const totSO   = allSoLines.reduce((s, r) => s + Number(r.so_amount || 0), 0);
+  const totPO   = allPoLines.reduce((s, r) => s + Number(r.po_amount || 0), 0);
+  const totGM   = totSO - totPO;
+  const totPct  = totSO > 0 ? (totGM / totSO) * 100 : 0;
+
   return (
     <div>
       {/* ── Filter bar ─────────────────────────────────────────── */}
@@ -135,6 +145,36 @@ export default function OrderListEnhanced({ entity = "QM" }) {
         <button className="pg-btn" onClick={run} disabled={loading}>
           {loading ? "Loading…" : "Refresh"}
         </button>
+      </div>
+
+      {/* ── KPI summary row ─────────────────────────────────────── */}
+      <div style={{ padding: "14px 18px", background: "#fff", borderBottom: "1px solid #e8e7e0" }}>
+        <div className="kpi-row" style={{ marginBottom: 0 }}>
+          <div className="kpi">
+            <div className="kpi-lbl">Total Sales (SO)</div>
+            <div className="kpi-val b">{fmtMYR(totSO)}</div>
+            <div className="kpi-sub">{allSoLines.length} lines · {Object.keys(tree).length} projects</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-lbl">Total Purchases (PO)</div>
+            <div className="kpi-val a">{fmtMYR(totPO)}</div>
+            <div className="kpi-sub">{allPoLines.length} lines</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-lbl">Gross Margin</div>
+            <div className="kpi-val" style={{ color: totGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>
+              {fmtMYR(totGM)}
+            </div>
+            <div className="kpi-sub">{totPct.toFixed(1)}% of sales</div>
+          </div>
+          <div className="kpi">
+            <div className="kpi-lbl">Margin %</div>
+            <div className="kpi-val" style={{ color: totGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>
+              {totPct.toFixed(1)}%
+            </div>
+            <div className="kpi-sub">{entity} · {level}</div>
+          </div>
+        </div>
       </div>
 
       {/* ── Content ────────────────────────────────────────────── */}
@@ -249,12 +289,12 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                                 Sales (SO lines)
                               </div>
                               {so.lines.map((r, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 11 }}>
-                                  <span style={{ color: "#333", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }} title={r.description}>
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
+                                  <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
                                     {r.description || r.item_code || "—"}
                                   </span>
                                   <StatusBadge status={r.payment_status} />
-                                  <span style={{ fontWeight: 500, color: "#0C9B6E", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.so_amount)}</span>
+                                  <span style={{ fontWeight: 500, color: "#0C9B6E", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.so_amount)}</span>
                                 </div>
                               ))}
                             </div>
@@ -265,15 +305,16 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                                 Purchases (PO lines)
                               </div>
                               {so.po.length === 0 && (
-                                <div style={{ fontSize: 11, color: "#888780", fontStyle: "italic" }}>No linked PO</div>
+                                <div style={{ fontSize: 12, color: "#888780", fontStyle: "italic" }}>No linked PO</div>
                               )}
                               {so.po.map((r, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 11 }}>
-                                  <span style={{ color: "#333", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }} title={r.description}>
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
+                                  <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
+                                    <span className="mono" style={{ color: "#185FA5", marginRight: 6 }}>{r.po_no || "—"}</span>
                                     {r.description || r.item_code || "—"}
                                   </span>
                                   <StatusBadge status={r.payment_status} />
-                                  <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.po_amount)}</span>
+                                  <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.po_amount)}</span>
                                 </div>
                               ))}
                             </div>
@@ -290,12 +331,12 @@ export default function OrderListEnhanced({ entity = "QM" }) {
                         Purchases not linked to any SO
                       </div>
                       {proj.unlinked_po.map((r, i) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 8px", fontSize: 11 }}>
-                          <span style={{ color: "#333", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }} title={r.description}>
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 8px", fontSize: 12 }}>
+                          <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
                             {r.po_no} — {r.description || r.item_code || "—"}
                           </span>
                           <StatusBadge status={r.payment_status} />
-                          <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", marginLeft: 8 }}>{fmtMYR(r.po_amount)}</span>
+                          <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.po_amount)}</span>
                         </div>
                       ))}
                     </div>
