@@ -174,12 +174,11 @@ function PoGroup({ po, level }) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function OrderListEnhanced({ entity = "QM" }) {
+export default function OrderListEnhanced({ entity = "QM", search = "" }) {
   const [tree,      setTree]      = useState({});
   const [loading,   setLoading]   = useState(false);
   const [expanded,  setExpanded]  = useState({});   // proj_no → bool
   const [soExp,     setSoExp]     = useState({});   // proj_no+so_no → bool
-  const [search,    setSearch]    = useState("");
   const [projLevel, setProjLevel] = useState({});   // proj_no → committed|accrued|realised
 
   // Always fetch the full ("committed") dataset once — accrued/realised
@@ -236,14 +235,7 @@ export default function OrderListEnhanced({ entity = "QM" }) {
       <div className="filter" style={{ gap: 8 }}>
         <span className="f-lbl">Order List Enhanced</span>
         <span style={{ fontSize: 10, color: "#888780" }}>View selection is now per-project — set it on each project card below.</span>
-        <input
-          className="search"
-          style={{ marginLeft: "auto", width: 180, fontSize: 12 }}
-          placeholder="Search project, SO…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        <button className="pg-btn" onClick={run} disabled={loading}>
+        <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={run} disabled={loading}>
           {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
