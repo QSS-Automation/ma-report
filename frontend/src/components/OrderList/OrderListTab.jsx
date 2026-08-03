@@ -102,20 +102,20 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
           </button>
         </div>
 
-        {tab === "classic" && <>
-          <div className="f-div"/>
-          <span className="f-lbl">Project</span>
-          <input
-            className="search"
-            style={{ width: 220, fontSize: 12 }}
-            placeholder="Search project code…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+        <div className="f-div"/>
+        <span className="f-lbl">Project</span>
+        <input
+          className="search"
+          style={{ width: 220, fontSize: 12 }}
+          placeholder="Search project code…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        {tab === "classic" && (
           <span className="f-lbl" style={{ marginLeft: 8 }}>
             {loading ? "Loading…" : `${filtered.length} project${filtered.length !== 1 ? "s" : ""}`}
           </span>
-        </>}
+        )}
       </div>
 
       {/* ── Classic tab ──────────────────────────────────────── */}
@@ -238,7 +238,7 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
       {/* ── Enhanced tab ─────────────────────────────────────── */}
       {tab === "enhanced" && (
         <div style={{ flex: 1, overflow: "auto" }}>
-          <OrderListEnhanced entity={entity} />
+          <OrderListEnhanced entity={entity} search={search} />
         </div>
       )}
 
