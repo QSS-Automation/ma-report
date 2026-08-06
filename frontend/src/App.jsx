@@ -72,6 +72,30 @@ const NAV = [
   },
 ];
 
+// Shown when the user successfully signs into Microsoft (isAuthenticated)
+// but is not found / inactive in ops_QM.users — i.e. AuthContext resolved
+// `user` to null. This is the actual access gate now that Azure AD
+// "Assignment required" is no longer doing that job.
+function AccessDenied() {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      height: "100vh", background: "#0d1117", color: "#8b949e", fontSize: 13, textAlign: "center",
+      padding: 24,
+    }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: "#e6edf3", marginBottom: 10 }}>
+        Access Denied
+      </div>
+      <div style={{ marginBottom: 4 }}>
+        Your account isn't registered for the Quandatics MA Report.
+      </div>
+      <div>
+        Contact your administrator to request access.
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // ── ALL hooks first — no early returns before this block ──
   const isAuthenticated = useIsAuthenticated();
@@ -82,7 +106,14 @@ export default function App() {
   const [entity,       setEntity]       = useState("QM");
   const [entities,     setEntities]     = useState([{ entity_code: "QM", display_name: "Quandatics Malaysia" }]);
 
-  const isReady = isAuthenticated || !!user;
+  // FIX: this must be AND, not OR. Previously `isAuthenticated || !!user`
+  // meant anyone who merely signed into Microsoft (isAuthenticated=true)
+  // could render the app even if `user` was null (i.e. not found in
+  // ops_QM.users) — since Azure AD's own "Assignment required" gate was
+  // the only thing actually blocking unregistered users. With that Azure
+  // gate turned off, both conditions must now hold for the app to be
+  // considered "ready".
+  const isReady = isAuthenticated && !!user;
 
   // Fetch config refresh label
   useEffect(() => {
@@ -98,13 +129,15 @@ export default function App() {
       .catch(() => {});
   }, [isReady, entity]);
 
-  // Fetch available entities
+  // Fetch available entities — scoped to this specific user (see
+  // /api/auth/entities: entity_scope='all' users get everything,
+  // 'restricted' users get only what's in ops_QM.user_entities).
   useEffect(() => {
-    if (!isReady) return;
-    getEntities()
+    if (!isReady || !user) return;
+    getEntities(user.user_id)
       .then(r => { if (r.data?.length) setEntities(r.data); })
       .catch(() => {});
-  }, [isReady]);
+  }, [isReady, user]);
 
   // ── Early returns AFTER all hooks ──
   if (loading) return (
@@ -112,7 +145,8 @@ export default function App() {
       Loading…
     </div>
   );
-  if (!isAuthenticated && !user) return <Login />;
+  if (!isAuthenticated) return <Login />;
+  if (!user) return <AccessDenied />;
 
   const handleNav = (id) => {
     if (id === "mfrs-sales") { setTab("mfrs"); setMfrsSub("sales"); }
