@@ -17,17 +17,17 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-  
+
     // ── Teams — check sessionStorage first ───────────────────
     const cached = sessionStorage.getItem("teams_user");
-    if(cached){
+    if (cached) {
       setUser(JSON.parse(cached));
       setLoading(false);
       return;
     }
-  
+
     // ── Teams SSO ─────────────────────────────────────────────
-    if(isInTeams() && accounts.length === 0){
+    if (isInTeams() && accounts.length === 0) {
       microsoftTeams.app.initialize()
         .then(() => microsoftTeams.authentication.getAuthToken())
         .then(token => {
@@ -42,27 +42,36 @@ export function AuthProvider({ children }) {
           setLoading(false);
         })
         .catch(e => {
+          // Not found / inactive in ops_QM.users (403), or any other
+          // failure — deny access rather than caching/granting anything.
           console.error("[Auth] Teams SSO failed:", e);
+          setUser(null);
           setLoading(false);
         });
       return;
     }
-  
+
     // ── Normal browser MSAL flow ──────────────────────────────
-    if(accounts.length === 0){
+    if (accounts.length === 0) {
       instance.ssoSilent(loginRequest)
         .catch(() => setLoading(false));
       return;
     }
-  
-    if(accounts.length > 0){
+
+    if (accounts.length > 0) {
       API.get("/api/auth/me", { params: { user_id: accounts[0].username } })
         .then(r => setUser(r.data))
-        .catch(() => setUser({
-          user_id:      accounts[0].username,
-          display_name: accounts[0].name,
-          role:         "staff"
-        }))
+        .catch(() => {
+          // FIX: previously this fabricated a fallback identity
+          // ({ user_id, display_name, role: "staff" }) on ANY failure,
+          // including a 403 "User not found or inactive." from the
+          // backend. That meant anyone who could sign into Microsoft —
+          // regardless of whether they were in ops_QM.users — got into
+          // the app as a synthetic "staff" user. Deny instead: leave
+          // `user` as null so App.jsx's access gate correctly shows
+          // "Access Denied" for anyone not registered in ops_QM.users.
+          setUser(null);
+        })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
