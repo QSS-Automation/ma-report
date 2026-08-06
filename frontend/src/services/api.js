@@ -14,6 +14,7 @@ export const lockPeriod     = (data)                   => API.post("/api/mfrs/lo
 export const getConfig      = (entity = "QM")          => API.get("/api/config",                  { params: { entity } });
 export const refreshStaging = (entity, user)           => API.post("/api/staging/refresh",        { entity, user });
 export const getEntities    = ()                       => API.get("/api/auth/entities");
+export const getEntities    = (userId)                 => API.get("/api/auth/entities", { params: { user_id: userId } });
 export const getLog = (entity, role, userId, from, to) => API.get("/api/log", { params: { entity, role, user_id: userId, from_date: from, to_date: to } });
 export const getTasks       = (entity, role, userId)   => API.get("/api/tasks",                   { params: { entity, role, user_id: userId } });
 export const createTask     = (data)                   => API.post("/api/tasks",                  data);
