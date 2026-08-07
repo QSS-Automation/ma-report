@@ -15,6 +15,10 @@ export function AuthProvider({ children }) {
   const { accounts, instance } = useMsal();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Explicitly true only when the backend rejected the user with a 403
+  // (not found / inactive in ops_QM.users) — distinct from "haven't
+  // resolved auth yet", so we don't show Access Denied prematurely.
+  const [denied, setDenied] = useState(false);
 
   useEffect(() => {
 
@@ -42,9 +46,11 @@ export function AuthProvider({ children }) {
           setLoading(false);
         })
         .catch(e => {
-          // Not found / inactive in ops_QM.users (403), or any other
-          // failure — deny access rather than caching/granting anything.
           console.error("[Auth] Teams SSO failed:", e);
+          // Only a genuine 403 from the backend (user not found/inactive)
+          // counts as "denied". Anything else (timeout, network blip) just
+          // fails this attempt — Login screen can retry, not a hard block.
+          if (e?.response?.status === 403) setDenied(true);
           setUser(null);
           setLoading(false);
         });
@@ -61,15 +67,14 @@ export function AuthProvider({ children }) {
     if (accounts.length > 0) {
       API.get("/api/auth/me", { params: { user_id: accounts[0].username } })
         .then(r => setUser(r.data))
-        .catch(() => {
+        .catch(e => {
           // FIX: previously this fabricated a fallback identity
           // ({ user_id, display_name, role: "staff" }) on ANY failure,
           // including a 403 "User not found or inactive." from the
           // backend. That meant anyone who could sign into Microsoft —
           // regardless of whether they were in ops_QM.users — got into
-          // the app as a synthetic "staff" user. Deny instead: leave
-          // `user` as null so App.jsx's access gate correctly shows
-          // "Access Denied" for anyone not registered in ops_QM.users.
+          // the app as a synthetic "staff" user. Deny instead.
+          if (e?.response?.status === 403) setDenied(true);
           setUser(null);
         })
         .finally(() => setLoading(false));
@@ -79,7 +84,7 @@ export function AuthProvider({ children }) {
   }, [accounts]);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, loading, denied }}>
       {children}
     </AuthContext.Provider>
   );
