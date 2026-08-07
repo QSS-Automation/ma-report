@@ -99,21 +99,20 @@ function AccessDenied() {
 export default function App() {
   // ── ALL hooks first — no early returns before this block ──
   const isAuthenticated = useIsAuthenticated();
-  const { user, loading } = useAuth();
+  const { user, loading, denied } = useAuth();
   const [tab,          setTab]          = useState("pnl");
   const [mfrsSub,      setMfrsSub]      = useState("sales");
   const [refreshLabel, setRefreshLabel] = useState("");
   const [entity,       setEntity]       = useState("QM");
   const [entities,     setEntities]     = useState([{ entity_code: "QM", display_name: "Quandatics Malaysia" }]);
 
-  // FIX: this must be AND, not OR. Previously `isAuthenticated || !!user`
-  // meant anyone who merely signed into Microsoft (isAuthenticated=true)
-  // could render the app even if `user` was null (i.e. not found in
-  // ops_QM.users) — since Azure AD's own "Assignment required" gate was
-  // the only thing actually blocking unregistered users. With that Azure
-  // gate turned off, both conditions must now hold for the app to be
-  // considered "ready".
-  const isReady = isAuthenticated && !!user;
+  // Teams users never set isAuthenticated (they bypass MSAL entirely and
+  // authenticate via Teams' own SSO token + sessionStorage caching), so
+  // this must stay OR — requiring AND would permanently lock out every
+  // Teams user, since isAuthenticated can never become true for them.
+  // The actual "was this user rejected by the backend" check lives in
+  // the separate `denied` flag below, not in this readiness check.
+  const isReady = isAuthenticated || !!user;
 
   // Fetch config refresh label
   useEffect(() => {
@@ -145,8 +144,8 @@ export default function App() {
       Loading…
     </div>
   );
-  if (!isAuthenticated) return <Login />;
-  if (!user) return <AccessDenied />;
+  if (denied) return <AccessDenied />;
+  if (!isAuthenticated && !user) return <Login />;
 
   const handleNav = (id) => {
     if (id === "mfrs-sales") { setTab("mfrs"); setMfrsSub("sales"); }
