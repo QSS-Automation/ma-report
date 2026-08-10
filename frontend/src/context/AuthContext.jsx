@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useMsal } from "@azure/msal-react";
 import * as microsoftTeams from "@microsoft/teams-js";
-import API from "../services/api";
+import API, { setCurrentUserId, clearCurrentUserId } from "../services/api";
 import { loginRequest, teamsLoginRequest } from "../auth/msalConfig";
 
 const AuthContext = createContext(null);
@@ -25,7 +25,9 @@ export function AuthProvider({ children }) {
     // ── Teams — check sessionStorage first ───────────────────
     const cached = sessionStorage.getItem("teams_user");
     if (cached) {
-      setUser(JSON.parse(cached));
+      const cachedUser = JSON.parse(cached);
+      setUser(cachedUser);
+      setCurrentUserId(cachedUser.user_id);
       setLoading(false);
       return;
     }
@@ -43,6 +45,7 @@ export function AuthProvider({ children }) {
           // Store in sessionStorage — persists across re-renders
           sessionStorage.setItem("teams_user", JSON.stringify(r.data));
           setUser(r.data);
+          setCurrentUserId(r.data.user_id);
           setLoading(false);
         })
         .catch(e => {
@@ -52,6 +55,7 @@ export function AuthProvider({ children }) {
           // fails this attempt — Login screen can retry, not a hard block.
           if (e?.response?.status === 403) setDenied(true);
           setUser(null);
+          clearCurrentUserId();
           setLoading(false);
         });
       return;
@@ -66,7 +70,10 @@ export function AuthProvider({ children }) {
 
     if (accounts.length > 0) {
       API.get("/api/auth/me", { params: { user_id: accounts[0].username } })
-        .then(r => setUser(r.data))
+        .then(r => {
+          setUser(r.data);
+          setCurrentUserId(r.data.user_id);
+        })
         .catch(e => {
           // FIX: previously this fabricated a fallback identity
           // ({ user_id, display_name, role: "staff" }) on ANY failure,
@@ -76,6 +83,7 @@ export function AuthProvider({ children }) {
           // the app as a synthetic "staff" user. Deny instead.
           if (e?.response?.status === 403) setDenied(true);
           setUser(null);
+          clearCurrentUserId();
         })
         .finally(() => setLoading(false));
     } else {
