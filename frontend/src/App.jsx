@@ -133,10 +133,26 @@ export default function App() {
   // 'restricted' users get only what's in ops_QM.user_entities).
   useEffect(() => {
     if (!isReady || !user) return;
-    getEntities(user.user_id)
-      .then(r => { if (r.data?.length) setEntities(r.data); })
+    getEntities()
+      .then(r => {
+        if (!r.data?.length) return;
+        setEntities(r.data);
+        // FIX: `entity` state defaults to "QM" on load. If this user is
+        // restricted and "QM" isn't in their allowed list, every API call
+        // (sales, order-list, tasks, log, etc.) keeps silently requesting
+        // "QM" forever — even though the <select> visually shows the only
+        // actually-allowed option (e.g. "QArmour"), since a browser
+        // <select> falls back to displaying the first <option> when the
+        // controlled `value` doesn't match any of them. Reconcile state
+        // with reality: if the current entity isn't allowed, switch to
+        // the first one that is.
+        const allowedCodes = r.data.map(e => e.entity_code);
+        if (!allowedCodes.includes(entity)) {
+          setEntity(r.data[0].entity_code);
+        }
+      })
       .catch(() => {});
-  }, [isReady, user]);
+  }, [isReady, user, entity]);
 
   // ── Early returns AFTER all hooks ──
   if (loading) return (
