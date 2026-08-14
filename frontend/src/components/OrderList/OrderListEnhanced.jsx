@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { getOrderListEnhanced } from "../../services/api";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { getOrderListEnhanced, linkPoToSo, getPendingLinks } from "../../services/api";
 import { fmtMYR } from "../../utils/fmt";
 import { showToast } from "../../utils/toast";
 
@@ -17,6 +17,7 @@ function StatusBadge({ status }) {
     "Credit Noted":    { bg: "#FFF3E0", color: "#E65100" },
     "Fully Billed":    { bg: "#E8F5E9", color: "#1B5E20" },
     "Partially Billed":{ bg: "#FFF8E1", color: "#F57F17" },
+    "Pending Sync":    { bg: "#FFF3E0", color: "#E65100" },
   };
   const s = map[status] || { bg: "#F5F5F5", color: "#616161" };
   return (
@@ -136,8 +137,11 @@ function calcGM(soAmt, poAmt) {
 }
 
 // ── PO group block — filters its own lines to the given view level; renders
-// nothing if none of its lines qualify under that view. ────────────────────
-function PoGroup({ po, level }) {
+// nothing if none of its lines qualify under that view. When `unlinked` is
+// true, shows either a "Link to SO" picker (not yet linked) or a
+// "Pending Sync" badge (link submitted, waiting for the next curated
+// rebuild to actually move it under the SO). ────────────────────────────────
+function PoGroup({ po, level, unlinked, soOptions, isPending, onLink, linking }) {
   const filteredLines = po.lines.filter(r => passesPo(r, level));
   if (filteredLines.length === 0) return null;
 
@@ -149,12 +153,38 @@ function PoGroup({ po, level }) {
   const paymentAgg = aggStatus(po.lines, "payment_status", PAYMENT_CLOSED);
   const overall    = combinedStatus(billingAgg, paymentAgg);
 
+  const [selectedSo, setSelectedSo] = useState("");
+
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12, flexWrap: "wrap" }}>
         <span className="mono" style={{ fontWeight: 500, color: "#185FA5", flexShrink: 0 }}>{po.po_no || "—"}</span>
         <span style={{ fontSize: 10, color: "#888780", flexShrink: 0 }}>{po.po_date ? po.po_date.slice(0, 10) : ""}</span>
         <StatusBadge status={overall} />
+
+        {unlinked && isPending && <StatusBadge status="Pending Sync" />}
+
+        {unlinked && !isPending && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }} onClick={e => e.stopPropagation()}>
+            <select
+              value={selectedSo}
+              onChange={e => setSelectedSo(e.target.value)}
+              style={{ fontSize: 10, padding: "2px 4px", border: "0.5px solid #e8e7e0", borderRadius: 4, background: "#fff" }}
+            >
+              <option value="">Link to SO…</option>
+              {soOptions.map(so => <option key={so} value={so}>{so}</option>)}
+            </select>
+            <button
+              className="pg-btn"
+              style={{ fontSize: 10, padding: "2px 8px" }}
+              disabled={!selectedSo || linking}
+              onClick={() => onLink(po.po_no, po.lines[0]?.proj_no, selectedSo)}
+            >
+              {linking ? "…" : "Link"}
+            </button>
+          </div>
+        )}
+
         <span style={{ marginLeft: "auto", fontWeight: 500, color: "#333", fontFamily: "monospace", flexShrink: 0 }}>
           {fmtMYR(poAmt)}
         </span>
@@ -174,12 +204,14 @@ function PoGroup({ po, level }) {
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
-export default function OrderListEnhanced({ entity = "QM", search = "" }) {
+export default function OrderListEnhanced({ entity = "QM", search = "", user }) {
   const [tree,      setTree]      = useState({});
   const [loading,   setLoading]   = useState(false);
   const [expanded,  setExpanded]  = useState({});   // proj_no → bool
   const [soExp,     setSoExp]     = useState({});   // proj_no+so_no → bool
   const [projLevel, setProjLevel] = useState({});   // proj_no → committed|accrued|realised
+  const [pendingLinks, setPendingLinks] = useState([]); // override rows with applied_at IS NULL
+  const [linkingPo, setLinkingPo] = useState(null);  // po_no currently being submitted
 
   // Always fetch the full ("committed") dataset once — accrued/realised
   // views are derived client-side per project from billing_status /
@@ -198,7 +230,37 @@ export default function OrderListEnhanced({ entity = "QM", search = "" }) {
     }
   }, [entity]);
 
+  const loadPendingLinks = useCallback(async () => {
+    try {
+      const res = await getPendingLinks(entity);
+      setPendingLinks(res.data || []);
+    } catch (e) {
+      // Non-critical — badge just won't show if this fails
+      console.error("[OrderList] Failed to load pending links:", e);
+    }
+  }, [entity]);
+
   useEffect(() => { run(); }, [run]);
+  useEffect(() => { loadPendingLinks(); }, [loadPendingLinks]);
+
+  const pendingPoSet = useMemo(() => new Set(pendingLinks.map(p => p.po_no)), [pendingLinks]);
+
+  const handleLinkPo = async (poNo, projNo, soNo) => {
+    if (!soNo) return;
+    setLinkingPo(poNo);
+    try {
+      await linkPoToSo({
+        entity, user: user?.user_id,
+        po_no: poNo, so_no: soNo, proj_no: projNo,
+      });
+      showToast(`✓ ${poNo} linked to ${soNo} — will appear under the SO after the next data sync.`);
+      await loadPendingLinks();
+    } catch (e) {
+      showToast("⚠ Failed to save link: " + (e?.response?.data?.detail || e.message));
+    } finally {
+      setLinkingPo(null);
+    }
+  };
 
   const toggleProj = (proj) => setExpanded(p => ({ ...p, [proj]: !p[proj] }));
   const toggleSO   = (key)  => setSoExp(p => ({ ...p, [key]: !p[key] }));
@@ -433,7 +495,18 @@ export default function OrderListEnhanced({ entity = "QM", search = "" }) {
                       <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
                         Purchases not linked to any SO
                       </div>
-                      {unlinkedPoKeys.map(k => <PoGroup key={k} po={proj.unlinkedPoMap[k]} level={lvl} />)}
+                      {unlinkedPoKeys.map(k => (
+                        <PoGroup
+                          key={k}
+                          po={proj.unlinkedPoMap[k]}
+                          level={lvl}
+                          unlinked
+                          soOptions={soKeys}
+                          isPending={pendingPoSet.has(proj.unlinkedPoMap[k].po_no)}
+                          onLink={handleLinkPo}
+                          linking={linkingPo === proj.unlinkedPoMap[k].po_no}
+                        />
+                      ))}
                     </div>
                   )}
 
