@@ -49,4 +49,6 @@ export const unlockSplit = (data) => API.post("/api/mfrs/unlock", data);
 export const exportExcel = (entity, from, to)          => API.get("/api/export/excel", {params: { entity, from_date: from, to_date: to },responseType: 'blob'});
 export const getAccounts = (entity, jt)                => API.get("/api/adjustment/accounts", { params: { entity, journal_type: jt } });
 export const getOrderListEnhanced = (entity, level)    => API.get("/api/order-list-enhanced", { params: { entity, level } });
+export const linkPoToSo     = (data)                   => API.post("/api/order-list-enhanced/link-po", data);
+export const getPendingLinks = (entity)                => API.get("/api/order-list-enhanced/pending-links", { params: { entity } });
 export default API;
