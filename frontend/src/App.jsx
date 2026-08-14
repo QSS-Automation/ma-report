@@ -1,397 +1,235 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { getOrderList, getOrderListEnhanced } from "../../services/api";
-import { fmtMYR } from "../../utils/fmt";
-import { showToast } from "../../utils/toast";
-import OrderListEnhanced from "./OrderListEnhanced";
+import React, { useState, useEffect } from "react";
+import PnL from "./components/PnL/PnL";
+import BS from "./components/BS/BS";
+import Sales from "./components/Sales/Sales";
+import Purchases from "./components/Purchases/Purchases";
+import MFRS from "./components/MFRS/MFRS";
+import Log from "./components/AdjLog/AdjLog";
+import AdjTasks from "./components/AdjTasks/AdjTasks";
+import Toast from "./components/Shared/Toast";
+import { getConfig, getEntities } from "./services/api";
+import { useIsAuthenticated } from "@azure/msal-react";
+import { useAuth } from "./context/AuthContext";
+import Login from "./components/Auth/Login";
+import OrderListTab from "./components/OrderList/OrderListTab";
 
-const fmtDate = (s) => {
-  if (!s) return "—";
-  const d = new Date(s.slice(0, 10));
-  return d.toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" });
-};
+const NAV = [
+  {
+    section: "Financial Reports",
+    items: [
+      {
+        id: "pnl", label: "P&L Statement",
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M4 11l2.5-3.5 2 2.5L11 5"/></svg>,
+      },
+      {
+        id: "tb", label: "Balance Sheet",
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12M5.5 3v3.5M10.5 3v3.5"/></svg>,
+      },
+    ],
+  },
+  {
+    section: "Adjustment",
+    items: [
+      {
+        id: "sales", label: "Sales", roles: ["staff","manager","admin"],
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="9" width="14" height="5" rx="1.5"/><path d="M8 1v8M5.5 6l2.5 3 2.5-3"/></svg>,
+      },
+      {
+        id: "pur", label: "Purchases", roles: ["staff","manager","admin"],
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="9" width="14" height="5" rx="1.5"/><path d="M8 7V1M5.5 4l2.5-3 2.5 3"/></svg>,
+      },
+      {
+        id: "adjtask", label: "Adj. Tasks", roles: ["staff","manager","admin"],
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 7l2 2 4-4"/></svg>,
+      },
+      {
+        id: "adjlog", label: "Log", roles: ["manager","admin"],
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 6h6M5 9h4"/></svg>,
+      },
+    ],
+  },
+  {
+    section: "MFRS",
+    items: [
+      {
+        id: "mfrs-sales", label: "Sales",
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="9" width="14" height="5" rx="1.5"/><path d="M8 1v8M5.5 6l2.5 3 2.5-3"/></svg>,
+      },
+      {
+        id: "mfrs-pur", label: "Purchases",
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="9" width="14" height="5" rx="1.5"/><path d="M8 7V1M5.5 4l2.5-3 2.5 3"/></svg>,
+      },
+    ],
+  },
+  {
+    section: "Order List",
+    items: [
+      {
+        id: "order-list", label: "Order List",
+        icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="3" width="14" height="10" rx="1.5"/><path d="M1 6h14M5 6v7M11 6v7"/></svg>,
+      },
+    ],
+  },
+];
 
-export default function OrderListTab({ entity = "QM", setEntity, entities = [], user }) {
-  const [tab,       setTab]       = useState("classic"); // "classic" | "enhanced"
-  const [rows,      setRows]      = useState([]);
-  const [loading,   setLoading]   = useState(false);
-  const [search,    setSearch]    = useState("");
-  const [expanded,  setExpanded]  = useState({});
+// Shown when the user successfully signs into Microsoft (isAuthenticated)
+// but is not found / inactive in ops_QM.users — i.e. AuthContext resolved
+// `user` to null. This is the actual access gate now that Azure AD
+// "Assignment required" is no longer doing that job.
+function AccessDenied() {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      height: "100vh", background: "#0d1117", color: "#8b949e", fontSize: 13, textAlign: "center",
+      padding: 24,
+    }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color: "#e6edf3", marginBottom: 10 }}>
+        Access Denied
+      </div>
+      <div style={{ marginBottom: 4 }}>
+        Your account isn't registered for the Quandatics MA Report.
+      </div>
+      <div>
+        Contact your administrator to request access.
+      </div>
+    </div>
+  );
+}
 
+export default function App() {
+  // ── ALL hooks first — no early returns before this block ──
+  const isAuthenticated = useIsAuthenticated();
+  const { user, loading, denied } = useAuth();
+  const [tab,          setTab]          = useState("pnl");
+  const [mfrsSub,      setMfrsSub]      = useState("sales");
+  const [refreshLabel, setRefreshLabel] = useState("");
+  const [entity,       setEntity]       = useState("QM");
+  const [entities,     setEntities]     = useState([{ entity_code: "QM", display_name: "Quandatics Malaysia" }]);
+
+  // Teams users never set isAuthenticated (they bypass MSAL entirely and
+  // authenticate via Teams' own SSO token + sessionStorage caching), so
+  // this must stay OR — requiring AND would permanently lock out every
+  // Teams user, since isAuthenticated can never become true for them.
+  // The actual "was this user rejected by the backend" check lives in
+  // the separate `denied` flag below, not in this readiness check.
+  const isReady = isAuthenticated || !!user;
+
+  // Fetch config refresh label
   useEffect(() => {
-    if (tab !== "classic") return;
-    setLoading(true);
-    setExpanded({});
-    getOrderList(entity)
-      .then(r => setRows(r.data || []))
-      .catch(e => showToast("⚠ " + e.message))
-      .finally(() => setLoading(false));
-  }, [entity, tab]);
+    if (!isReady) return;
+    getConfig(entity)
+      .then((r) => {
+        const ts = r.data?.staging_refreshed_at;
+        if (ts) {
+          const mins = Math.round((Date.now() - new Date(ts)) / 60000);
+          setRefreshLabel(mins < 1 ? "just now" : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`);
+        }
+      })
+      .catch(() => {});
+  }, [isReady, entity]);
 
-  const projects = useMemo(() => {
-    const map = {};
-    rows.forEach(r => {
-      if (!map[r.proj_no]) map[r.proj_no] = { sales: [], purchases: [] };
-      if (r.journal_type === "SALES")    map[r.proj_no].sales.push(r);
-      if (r.journal_type === "PURCHASE" || r.journal_type === "BANK") map[r.proj_no].purchases.push(r);
-    });
-    return map;
-  }, [rows]);
+  // Fetch available entities — scoped to this specific user (see
+  // /api/auth/entities: entity_scope='all' users get everything,
+  // 'restricted' users get only what's in ops_QM.user_entities).
+  useEffect(() => {
+    if (!isReady || !user) return;
+    getEntities()
+      .then(r => {
+        if (!r.data?.length) return;
+        setEntities(r.data);
+        // FIX: `entity` state defaults to "QM" on load. If this user is
+        // restricted and "QM" isn't in their allowed list, every API call
+        // (sales, order-list, tasks, log, etc.) keeps silently requesting
+        // "QM" forever — even though the <select> visually shows the only
+        // actually-allowed option (e.g. "QArmour"), since a browser
+        // <select> falls back to displaying the first <option> when the
+        // controlled `value` doesn't match any of them. Reconcile state
+        // with reality: if the current entity isn't allowed, switch to
+        // the first one that is.
+        const allowedCodes = r.data.map(e => e.entity_code);
+        if (!allowedCodes.includes(entity)) {
+          setEntity(r.data[0].entity_code);
+        }
+      })
+      .catch(() => {});
+  }, [isReady, user, entity]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return Object.keys(projects)
-      .filter(p => !q || p.toLowerCase().includes(q))
-      .sort();
-  }, [projects, search]);
+  // ── Early returns AFTER all hooks ──
+  if (loading) return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", color:"#888780", fontSize:13 }}>
+      Loading…
+    </div>
+  );
+  if (denied) return <AccessDenied />;
+  if (!isAuthenticated && !user) return <Login />;
 
-  const toggle = proj => setExpanded(prev => ({ ...prev, [proj]: !prev[proj] }));
-
-  const summary = proj => {
-    const { sales, purchases } = projects[proj];
-    const ts  = sales.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-    const tp  = purchases.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-    const gm  = ts - tp;
-    const pct = ts > 0 ? (gm / ts) * 100 : 0;
-    return { ts, tp, gm, pct };
+  const handleNav = (id) => {
+    if (id === "mfrs-sales") { setTab("mfrs"); setMfrsSub("sales"); }
+    else if (id === "mfrs-pur") { setTab("mfrs"); setMfrsSub("pur"); }
+    else setTab(id);
   };
 
-  const allSales     = Object.values(projects).flatMap(p => p.sales);
-  const allPurchases = Object.values(projects).flatMap(p => p.purchases);
-  const totSales     = allSales.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-  const totPurch     = allPurchases.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-  const totMargin    = totSales - totPurch;
-  const totPct       = totSales > 0 ? (totMargin / totSales) * 100 : 0;
+  const activeId = tab === "mfrs" ? `mfrs-${mfrsSub}` : tab;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", minHeight: 0 }}>
+    <div className="shell">
 
-      {/* ── Page header ──────────────────────────────────────── */}
-      <div className="pg-hdr">
-        <div className="pg-title">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#185FA5" strokeWidth="1.5">
-            <rect x="1" y="3" width="14" height="10" rx="1.5"/>
-            <path d="M1 6h14M5 6v7M11 6v7"/>
-          </svg>
-          Order List <span className="pg-badge">{entity}</span>
-        </div>
-      </div>
-
-      {/* ── Filter bar ───────────────────────────────────────── */}
-      <div className="filter">
-        <span className="f-lbl">Entity</span>
-        <select className="f-sel" value={entity} onChange={e => setEntity(e.target.value)}>
-          {entities.map(e => (
-            <option key={e.entity_code} value={e.entity_code}>{e.entity_code}</option>
-          ))}
-        </select>
-        <div className="f-div"/>
-
-        {/* Tab toggle */}
-        <div style={{ display: "flex", gap: 4 }}>
-          <button
-            className="pg-btn"
-            style={tab === "classic" ? { background: "var(--bg-accent)", color: "var(--text-accent)", borderColor: "var(--border-accent)" } : {}}
-            onClick={() => setTab("classic")}>
-            Classic
-          </button>
-          <button
-            className="pg-btn"
-            style={tab === "enhanced" ? { background: "var(--bg-accent)", color: "var(--text-accent)", borderColor: "var(--border-accent)" } : {}}
-            onClick={() => setTab("enhanced")}>
-            Enhanced ✦
-          </button>
-        </div>
-
-        <div className="f-div"/>
-        <span className="f-lbl">Project</span>
-        <input
-          className="search"
-          style={{ width: 220, fontSize: 12 }}
-          placeholder="Search project code…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        {tab === "classic" && (
-          <span className="f-lbl" style={{ marginLeft: 8 }}>
-            {loading ? "Loading…" : `${filtered.length} project${filtered.length !== 1 ? "s" : ""}`}
-          </span>
-        )}
-      </div>
-
-      {/* ── Classic tab ──────────────────────────────────────── */}
-      {tab === "classic" && <>
-        <div style={{ padding: "14px 18px", flexShrink: 0, background: "#fff", borderBottom: "1px solid #e8e7e0" }}>
-          <div className="kpi-row" style={{ marginBottom: 0 }}>
-            <div className="kpi">
-              <div className="kpi-lbl">Total Sales</div>
-              <div className="kpi-val b">{fmtMYR(totSales)}</div>
-              <div className="kpi-sub">{allSales.length} lines · {Object.keys(projects).length} projects</div>
-            </div>
-            <div className="kpi">
-              <div className="kpi-lbl">Total Purchases</div>
-              <div className="kpi-val a">{fmtMYR(totPurch)}</div>
-              <div className="kpi-sub">{allPurchases.length} lines</div>
-            </div>
-            <div className="kpi">
-              <div className="kpi-lbl">Gross Margin</div>
-              <div className="kpi-val" style={{ color: totMargin >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-                {fmtMYR(totMargin)}
-              </div>
-              <div className="kpi-sub">{totPct.toFixed(1)}% of sales</div>
-            </div>
-            <div className="kpi">
-              <div className="kpi-lbl">Margin %</div>
-              <div className="kpi-val" style={{ color: totMargin >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-                {totPct.toFixed(1)}%
-              </div>
-              <div className="kpi-sub">{entity} · all projects</div>
-            </div>
+      {/* ── Sidebar ── */}
+      <div className="sb">
+        <div className="sb-brand">
+          <div className="sb-logo">Q</div>
+          <div>
+            <div className="sb-name">Quandatics</div>
+            <div className="sb-tag">Management Accounts</div>
           </div>
         </div>
 
-        <div className="content">
-          {loading && (
-            <div style={{ padding: "2rem", textAlign: "center", color: "#888780", fontSize: 13 }}>
-              Loading…
-            </div>
-          )}
-
-          {!loading && filtered.length === 0 && (
-            <div className="card">
-              <div style={{ padding: "2rem", textAlign: "center", color: "#888780", fontSize: 13 }}>
-                No projects found.
-              </div>
-            </div>
-          )}
-
-          {!loading && filtered.map(proj => {
-            const { ts, tp, gm, pct } = summary(proj);
-            const { sales, purchases } = projects[proj];
-            const isOpen = !!expanded[proj];
-
-            return (
-              <div key={proj} className="card" style={{ marginBottom: 8 }}>
+        {NAV.map((group) => (
+          <React.Fragment key={group.section}>
+            <div className="sb-sec">{group.section}</div>
+            {group.items
+              .filter(item => !item.roles || item.roles.includes(user?.role))
+              .map((item) => (
                 <div
-                  className="card-hdr"
-                  style={{ cursor: "pointer", userSelect: "none" }}
-                  onClick={() => toggle(proj)}
+                  key={item.id}
+                  className={"sb-item" + (activeId === item.id ? " on" : "")}
+                  onClick={() => handleNav(item.id)}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, flexWrap: "wrap" }}>
-                    <span style={{
-                      fontSize: 10, color: "#888780", width: 12, display: "inline-block",
-                      transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
-                      transition: "transform 0.15s",
-                    }}>▶</span>
-                    <span className="card-title" style={{ minWidth: 160, fontSize: 13 }}>
-                      {proj}
-                    </span>
-                    <span className="bdg bdg-ps" style={{ fontSize: 10 }}>
-                      {sales.length} sales
-                    </span>
-                    <span className="bdg bdg-lic" style={{ fontSize: 10 }}>
-                      {purchases.length} purchases
-                    </span>
-                    <div style={{ display: "flex", gap: 24, marginLeft: "auto", flexWrap: "wrap" }}>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 10, color: "#888780" }}>Sales</div>
-                        <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(ts)}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 10, color: "#888780" }}>Purchases</div>
-                        <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(tp)}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 10, color: "#888780" }}>Gross Margin</div>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: gm >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-                          {fmtMYR(gm)}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 10, color: "#888780" }}>Margin %</div>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: gm >= 0 ? "#0C9B6E" : "#E24B4A" }}>
-                          {pct.toFixed(1)}%
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  {item.icon}
+                  {item.label}
                 </div>
-
-                {isOpen && (
-                  <div style={{ padding: 12 }}>
-                    <div style={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)",
-                      gap: 10,
-                      alignItems: "stretch",
-                    }}>
-                      <PaneTable title="Sales"     type="sales"     rows={sales}     />
-                      <PaneTable title="Purchases" type="purchases" rows={purchases} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </>}
-
-      {/* ── Enhanced tab ─────────────────────────────────────── */}
-      {tab === "enhanced" && (
-        <div style={{ flex: 1, overflow: "auto" }}>
-          <OrderListEnhanced entity={entity} search={search} user={user} />
-        </div>
-      )}
-
-    </div>
-  );
-}
-
-function PaneTable({ title, type, rows }) {
-  const isSales = type === "sales";
-  const total   = rows.reduce((a, r) => a + (Number(r.amount) || 0), 0);
-  const docNos  = new Set(rows.map(r => r.ref_no1).filter(Boolean)).size;
-
-  return (
-    <div style={{
-      border: "0.5px solid #e8e7e0",
-      borderRadius: 8,
-      overflow: "hidden",
-      background: "#fff",
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-    }}>
-      {/* Pane header */}
-      <div style={{
-        padding: "7px 10px",
-        borderBottom: "0.5px solid #e8e7e0",
-        background: "#fafaf8",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 500 }}>
-          <span style={{ color: isSales ? "#0C9B6E" : "#888780" }}>{isSales ? "↑" : "↓"}</span>
-          {title}
-          <span className={`bdg ${isSales ? "bdg-ps" : "bdg-lic"}`} style={{ fontSize: 9 }}>
-            {rows.length} lines
-          </span>
-        </div>
-        <span style={{ fontSize: 10, color: "#888780" }}>
-          Total <b style={{ color: "#333" }}>{fmtMYR(total)}</b>
-        </span>
-      </div>
-
-      {/* Table */}
-      {rows.length === 0 ? (
-        <div style={{ padding: "32px 20px", textAlign: "center", fontSize: 11, color: "#888780", flex: 1 }}>
-          No {title.toLowerCase()} lines
-        </div>
-      ) : (
-        <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 400, flex: 1 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, tableLayout: "fixed" }}>
-            <colgroup>
-              <col style={{ width: 80 }}/>   {/* Date */}
-              <col style={{ width: 96 }}/>   {/* Doc no */}
-              <col/>                          {/* Account / Desc — takes remaining space */}
-              <col style={{ width: 50 }}/>   {/* Cat */}
-              <col style={{ width: 96 }}/>   {/* Amount */}
-            </colgroup>
-            <thead>
-              <tr>
-                <th style={TH()}>Date</th>
-                <th style={TH()}>Doc no</th>
-                <th style={TH()}>Account / Description</th>
-                <th style={TH()}>Cat</th>
-                <th style={{ ...TH(), textAlign: "right" }}>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} className="row-hover">
-                  <td style={TD()}>
-                    <span className="muted" style={{ whiteSpace: "nowrap" }}>{fmtDate(r.trans_date)}</span>
-                  </td>
-                  <td style={TD()}>
-                    <div className="mono" style={{ fontSize: 10, color: "#185FA5", wordBreak: "break-all" }}>
-                      {r.ref_no1 || "—"}
-                    </div>
-                    {r.ref_no2 && (
-                      <div className="mono muted" style={{ fontSize: 9 }}>{r.ref_no2}</div>
-                    )}
-                  </td>
-                  <td style={TD()}>
-                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {r.description || "—"}
-                    </div>
-                    <div className="muted" style={{ fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {r.acc_desc}
-                    </div>
-                  </td>
-                  <td style={TD()}>
-                    {r.category
-                      ? <span className={r.category === "LIC" ? "bdg bdg-lic" : "bdg bdg-ps"} style={{ fontSize: 9 }}>
-                          {r.category}
-                        </span>
-                      : <span className="muted">—</span>
-                    }
-                    {r.total_days && (
-                      <div className="muted" style={{ fontSize: 9, marginTop: 2 }}>{r.total_days}d</div>
-                    )}
-                  </td>
-                  <td style={{ ...TD(), textAlign: "right" }}>
-                    <span className="mono">{fmtMYR(Number(r.amount))}</span>
-                    {r.start_date && (
-                      <div className="muted" style={{ fontSize: 9, marginTop: 2, whiteSpace: "nowrap" }}>
-                        {fmtDate(r.start_date)}{r.end_date ? " – " + fmtDate(r.end_date) : ""}
-                      </div>
-                    )}
-                  </td>
-                </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+          </React.Fragment>
+        ))}
 
-      {/* Footer */}
-      <div style={{
-        padding: "6px 10px",
-        borderTop: "0.5px solid #e8e7e0",
-        background: "#fafaf8",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        flexShrink: 0,
-      }}>
-        <span className="muted" style={{ fontSize: 10 }}>
-          {rows.length} lines · {docNos} doc nos
-        </span>
-        <span style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(total)}</span>
+        <div className="sb-foot">
+          v1.0 · {entity} · 2026
+          {refreshLabel && (
+            <span style={{ marginLeft: 6, color: "#b4b2a9" }}>
+              · refreshed {refreshLabel}
+            </span>
+          )}
+          {user && (
+            <div style={{ marginTop: 6, color: "#b4b2a9", fontSize: 10 }}>
+              {user.display_name} · {user.role}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* ── Main content ── */}
+      <div className="main">
+        <div style={{ display: tab==="pnl"        ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><PnL          entity={entity} setEntity={setEntity} entities={entities} /></div>
+        <div style={{ display: tab==="tb"         ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><BS           entity={entity} setEntity={setEntity} entities={entities} /></div>
+        <div style={{ display: tab==="sales"      ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Sales        entity={entity} setEntity={setEntity} entities={entities} /></div>
+        <div style={{ display: tab==="pur"        ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Purchases    entity={entity} setEntity={setEntity} entities={entities} /></div>
+        <div style={{ display: tab==="mfrs"       ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><MFRS         entity={entity} setEntity={setEntity} entities={entities} defaultSub={mfrsSub} /></div>
+        <div style={{ display: tab==="adjtask"    ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><AdjTasks     entity={entity} entities={entities} /></div>
+        <div style={{ display: tab==="adjlog"     ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><Log          entity={entity} entities={entities} /></div>
+        <div style={{ display: tab==="order-list" ? "flex":"none", flexDirection:"column", flex:1, overflow:"hidden", minHeight:0 }}><OrderListTab entity={entity} setEntity={setEntity} entities={entities} user={user} /></div>
+      </div>
+
+      <Toast />
     </div>
   );
 }
-
-const TH = (extra = {}) => ({
-  fontSize: 9,
-  fontWeight: 700,
-  color: "#888780",
-  textTransform: "uppercase",
-  letterSpacing: ".05em",
-  padding: "5px 8px",
-  textAlign: "left",
-  background: "#fafaf8",
-  borderBottom: "0.5px solid #e8e7e0",
-  position: "sticky",
-  top: 0,
-  zIndex: 1,
-  ...extra,
-});
-
-const TD = () => ({
-  padding: "6px 8px",
-  borderBottom: "0.5px solid #f0f0ee",
-  verticalAlign: "top",
-  lineHeight: 1.4,
-});
