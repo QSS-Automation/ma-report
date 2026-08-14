@@ -10,7 +10,7 @@ const fmtDate = (s) => {
   return d.toLocaleDateString("en-MY", { day: "2-digit", month: "short", year: "numeric" });
 };
 
-export default function OrderListTab({ entity = "QM", setEntity, entities = [] }) {
+export default function OrderListTab({ entity = "QM", setEntity, entities = [], user }) {
   const [tab,       setTab]       = useState("classic"); // "classic" | "enhanced"
   const [rows,      setRows]      = useState([]);
   const [loading,   setLoading]   = useState(false);
@@ -238,7 +238,7 @@ export default function OrderListTab({ entity = "QM", setEntity, entities = [] }
       {/* ── Enhanced tab ─────────────────────────────────────── */}
       {tab === "enhanced" && (
         <div style={{ flex: 1, overflow: "auto" }}>
-          <OrderListEnhanced entity={entity} search={search} />
+          <OrderListEnhanced entity={entity} search={search} user={user} />
         </div>
       )}
 
