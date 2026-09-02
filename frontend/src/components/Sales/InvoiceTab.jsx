@@ -171,7 +171,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const [loading,setLoading]=useState(false);
   const [lockedPeriods,setLockedPeriods]=useState([]);
   const [lockModal,setLockModal]=useState(false);
-  const [unlockModal,setUnlockModal]=useState({open:false,invNo:""});
+  const [unlockModal,setUnlockModal]=useState({open:false,invNo:"",sourceKey:null,journalType:""});
   const [taskModal,setTaskModal]=useState(false);
   const [newLineOpen,setNewLineOpen]=useState(false);
   const [newLineSaving,setNewLineSaving]=useState(false);
@@ -740,7 +740,12 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         <td style={{whiteSpace:"nowrap"}}>
                           {reallyLocked
                             ?<button className="btn-unlock-req"
-                                onClick={()=>setUnlockModal({open:true,invNo:inv.ref_no1||"#"+inv.source_key})}>
+                                onClick={()=>setUnlockModal({
+                                  open:true,
+                                  invNo:inv.ref_no1||"#"+inv.source_key,
+                                  sourceKey:inv.source_key,
+                                  journalType:tab==="sales"?"SALES":"PURCHASE"
+                                })}>
                                 🔓 Request unlock
                               </button>
                             :inEdit
@@ -1007,8 +1012,29 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
       <LockModal open={lockModal} onClose={()=>setLockModal(false)} onConfirm={handleLock}/>
       <UnlockModal open={unlockModal.open} invNo={unlockModal.invNo}
-        onClose={()=>setUnlockModal({open:false,invNo:""})}
-        onSubmit={()=>{setUnlockModal({open:false,invNo:""});showToast("🔓 Unlock request submitted.");}}/>
+        onClose={()=>setUnlockModal({open:false,invNo:"",sourceKey:null,journalType:""})}
+        onSubmit={async(reason)=>{
+            try{
+                await createTask({
+                    entity,
+                    todo:         "Unlock request: "+unlockModal.invNo,
+                    description:  reason,
+                    remark:       reason,
+                    source:       tab==="sales"?"sales":"purchases",
+                    source_key:   unlockModal.sourceKey,
+                    journal_type: unlockModal.journalType,
+                    ref_no:       unlockModal.invNo,
+                    assigned_to:  null,
+                    due_date:     null,
+                    task_type:    "unlock_request",
+                    created_by:   user?.user_id,
+                });
+                setUnlockModal({open:false,invNo:"",sourceKey:null,journalType:""});
+                showToast("🔓 Unlock request submitted.");
+            }catch(e){
+                showToast("⚠ Failed to submit unlock request: "+e.message);
+            }
+        }}/>
       <TaskModal open={taskModal} defaultSrc={tab} onClose={()=>setTaskModal(false)}
         onSave={async(form)=>{
             try{
