@@ -592,6 +592,18 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   const hasSplit=inv.splits&&inv.splits.length>0;
                   const isMultiSplit=inv.splits&&inv.splits.length>1;
                   const singleSplit=hasSplit&&!isMultiSplit?inv.splits[0]:null;
+                  // FIX: `locked` alone only reflects whether THIS browser
+                  // session personally clicked "Lock period" — it resets to
+                  // false on every page load/refresh, since lockedPeriods
+                  // starts empty and is never re-hydrated from the backend.
+                  // The real, persisted lock state lives on each split's
+                  // own is_locked flag. Combine both so a genuinely locked
+                  // invoice still shows "Request unlock" after a fresh
+                  // reload, not just immediately after locking it in the
+                  // current session.
+                  const reallyLocked = locked
+                    || (singleSplit && singleSplit.is_locked)
+                    || (hasSplit && inv.splits.some(s => s.is_locked));
                   const inDraft=splitState[inv.source_key];
                   const inEdit=editState[inv.source_key];
                   const hdr=Number(inv.home_dr),hcr=Number(inv.home_cr),amt=Number(inv.amount);
@@ -614,7 +626,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   }else if(savedCat){
                     typeBdg=<CatBadge cat={savedCat}/>;
                   }else{
-                    typeBdg=locked
+                    typeBdg=reallyLocked
                       ?<span className="bdg bdg-none">— Assign</span>
                       :<select className="cat-sel" value={getRow(inv.source_key,"cat","")}
                           onChange={e=>updateRow(inv.source_key,"cat",e.target.value)}>
@@ -624,7 +636,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
                   return(
                     <React.Fragment key={inv.source_key}>
-                      <tr className={"row-hover"+(locked?" row-locked":"")+(inEdit?" row-split":"")}>
+                      <tr className={"row-hover"+(reallyLocked?" row-locked":"")+(inEdit?" row-split":"")}>
                         <td className="muted">{fmtDateShort(inv.trans_date)}</td>
                         <td className="mono muted" style={{fontSize:11}}>{inv.acc_no||"—"}</td>
                         <td className="muted" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -635,7 +647,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         </td>
                         <td className="mono" style={{fontSize:11}}>{inv.proj_no||"—"}</td>
                         <td className="mono">
-                          {locked
+                          {reallyLocked
                             ?<>🔒 {inv.ref_no1}</>
                             :<span style={{color:"#185FA5"}}>{inv.ref_no1||"—"}</span>}
                         </td>
@@ -660,7 +672,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               :hasSplit
                                 ?<span className="muted">—</span>
                                 :<input type="text" className="f-date"
-                                    value={getRow(inv.source_key,"eu")} readOnly={locked}
+                                    value={getRow(inv.source_key,"eu")} readOnly={reallyLocked}
                                     placeholder="End user"
                                     onChange={e=>updateRow(inv.source_key,"eu",e.target.value)}
                                     style={{width:90,fontSize:11,padding:"3px 5px"}}/>}
@@ -675,7 +687,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             :singleSplit
                               ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.start_date)||"—"}</span>
                               :<input type="date" className="f-date"
-                                value={getRow(inv.source_key,"sd")} readOnly={locked||isMultiSplit}
+                                value={getRow(inv.source_key,"sd")} readOnly={reallyLocked||isMultiSplit}
                                 onChange={e=>updateRow(inv.source_key,"sd",e.target.value)}
                                 style={{width:96,fontSize:11,padding:"3px 5px",
                                         borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
@@ -690,7 +702,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             :singleSplit
                               ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.end_date)||"—"}</span>
                               :<input type="date" className="f-date"
-                                value={getRow(inv.source_key,"ed")} readOnly={locked||isMultiSplit}
+                                value={getRow(inv.source_key,"ed")} readOnly={reallyLocked||isMultiSplit}
                                 onChange={e=>updateRow(inv.source_key,"ed",e.target.value)}
                                 style={{width:96,fontSize:11,padding:"3px 5px",
                                         borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
@@ -718,7 +730,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                               :hasSplit
                                 ?<span className="muted">—</span>
                                 :<input type="text" className="f-date"
-                                    value={getRow(inv.source_key,"rm")} readOnly={locked}
+                                    value={getRow(inv.source_key,"rm")} readOnly={reallyLocked}
                                     placeholder="Remark…"
                                     onChange={e=>updateRow(inv.source_key,"rm",e.target.value)}
                                     style={{width:110,fontSize:11,padding:"3px 5px"}}/>}
@@ -726,7 +738,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
                         {/* Action */}
                         <td style={{whiteSpace:"nowrap"}}>
-                          {locked
+                          {reallyLocked
                             ?<button className="btn-unlock-req"
                                 onClick={()=>setUnlockModal({open:true,invNo:inv.ref_no1||"#"+inv.source_key})}>
                                 🔓 Request unlock
@@ -737,9 +749,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                   <button className="btn-del" onClick={()=>cancelEdit(inv.source_key)}>✕</button>
                                 </span>
                               :singleSplit
-                                ?singleSplit.is_locked
-                                  ?<span style={{fontSize:10,color:"#888780"}}>🔒 Locked</span>
-                                  :<button className="btn-split" onClick={()=>startEdit(inv.source_key,singleSplit)}>✎ Edit</button>
+                                ?<button className="btn-split" onClick={()=>startEdit(inv.source_key,singleSplit)}>✎ Edit</button>
                                 :!hasSplit&&!inDraft
                                   ?<span style={{display:"flex",gap:4}}>
                                       <button className="btn-save" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</button>
@@ -752,16 +762,16 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
                       {/* ── Existing multi-split rows ── */}
                       {isMultiSplit&&isEx&&inv.splits.map((line,li)=>(
-                        <tr key={"s"+li} className={"row-split"+(locked?" row-split-locked":"")}>
+                        <tr key={"s"+li} className={"row-split"+(reallyLocked?" row-split-locked":"")}>
                           <td colSpan={isSales?5:6}/>
                           <td colSpan={2}>
                             <div style={{display:"flex",alignItems:"center",gap:6,paddingLeft:12}}>
-                              <div style={{width:2,height:34,background:locked?"#F09595":"#85B7EB",
+                              <div style={{width:2,height:34,background:reallyLocked?"#F09595":"#85B7EB",
                                   flexShrink:0,marginRight:6,borderRadius:1}}/>
                               <div>
                                 <CatBadge cat={line.category}/>
-                                <div style={{fontSize:9,color:locked?"#c0392b":"#888780",marginTop:3}}>
-                                  {locked?"🔒 Locked":"MFRS recognition period"}
+                                <div style={{fontSize:9,color:reallyLocked?"#c0392b":"#888780",marginTop:3}}>
+                                  {reallyLocked?"🔒 Locked":"MFRS recognition period"}
                                 </div>
                               </div>
                             </div>
@@ -771,21 +781,21 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                             {fmtMYR(Number(line.net_amount))}
                           </td>
                           <td><CatBadge cat={line.category}/></td>
-                          <td><input type="date" className="f-date" defaultValue={line.start_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
-                          <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={locked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
+                          <td><input type="date" className="f-date" defaultValue={line.start_date||""} readOnly={reallyLocked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
+                          <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={reallyLocked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
                           <td className="tr mono muted">{line.total_days||"—"}</td>
                           <td><span style={{fontSize:11,color:"#888780"}}>{line.remark||"—"}</span></td>
                           <td colSpan={2}/>
                         </tr>
                       ))}
                       {isMultiSplit&&isEx&&(
-                        <tr className={"row-addsplit"+(locked?" row-addsplit-locked":"")}>
+                        <tr className={"row-addsplit"+(reallyLocked?" row-addsplit-locked":"")}>
                           <td colSpan={colSpanFull-2} style={{textAlign:"right"}}>
                             <span className="val-ok">
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
                             &nbsp;&nbsp;
-                            {!locked&&<button className="btn-split"
+                            {!reallyLocked&&<button className="btn-split"
                               onClick={()=>startMultiEdit(inv.source_key,inv.splits)}>
                               ✎ Edit
                             </button>}
