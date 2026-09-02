@@ -48,8 +48,6 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
 
   // ── Create task — saves to DB then reloads ──────────────────────
   const create = async (form) => {
-    alert("CREATE CALLED: " + form.todo);
-    console.log("create called with form:", form);
     try {
       const payload = {
         entity:      entity,
@@ -67,8 +65,6 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
       setModal(false);
       showToast("✓ Task created.");
     } catch (e) {
-        console.error("createTask error:", e);
-        console.error("error response:", e.response?.data);
         showToast("⚠ Failed to create task: " + e.message);
     }
   };
@@ -232,7 +228,19 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
                   if (t.task_type === "unlock_request" && t.status === "unlock_pending")
                     actions = (
                       <button className="btn-save" style={{ background: "#1D9E75", marginRight: 4 }}
-                        onClick={() => upd(t.id, "unlocked")}>Approve Unlock</button>
+                        onClick={() => upd(t.id, "unlocked", {
+                          // FIX: this button was only sending {status:"unlocked"}
+                          // with no source_key/journal_type — so tasks.py's
+                          // `if body["status"]=="unlocked" and body.get("source_key")`
+                          // check silently failed and MfrsService().unlock_period()
+                          // never actually ran. The task LOOKED approved (status
+                          // flipped), but the invoice stayed locked and its MFRS
+                          // rows were never removed. `t` already has both fields
+                          // from the GET /api/tasks response — just wasn't being
+                          // read.
+                          source_key: t.source_key,
+                          journal_type: t.journal_type,
+                        })}>Approve Unlock</button>
                     );
                   if (!["cancelled", "checked", "unlocked"].includes(t.status))
                     actions = (
