@@ -1,10 +1,11 @@
 import React,{useState,useCallback,useEffect} from "react";
-import {getPnl, getBs, refreshStaging, exportExcel} from "../../services/api";
+import {getPnl, getPnlV2, getBs, refreshStaging, exportExcel} from "../../services/api";
 import {useMonthPicker} from "../../hooks/useMonthPicker";
 import MonthPicker from "../Shared/MonthPicker";
 import {fmtMYRK,numFmt,MN} from "../../utils/fmt";
 import {showToast} from "../../utils/toast";
 import PnLTable from "./PnLTable";
+import PnLTableV2 from "./PnLTableV2";
 import PnLCompare from "./PnLCompare";
 import PnLSideCards from "./PnLSideCards";
 
@@ -12,6 +13,8 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
   const now=new Date();
   const mp=useMonthPicker(now.getFullYear(),0,now.getFullYear(),11);
   const [data,setData]=useState(null);
+  const [dataV2,setDataV2]=useState(null);
+  const [pnlVersion,setPnlVersion]=useState("v1"); // "v1" | "v2"
   const [loading,setLoading]=useState(false);
   const [view,setView]=useState("detail");
   const [yoy,setYoy]=useState(false);
@@ -19,7 +22,7 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
   const [preset,setPreset]=useState("ty");
   const [cmpData, setCmpData] = useState(null);
   const [rebuilding, setRebuilding] = useState(false);
-  useEffect(() => { setData(null); }, [entity]);
+  useEffect(() => { setData(null); setDataV2(null); }, [entity]);
   const rebuild = useCallback(async () => {
     setRebuilding(true);
     try {
@@ -49,9 +52,16 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
     ]);
     setData(res.data);
     setCmpData({ active: res.data, priorSame: pyRes.data, priorFull: pyFyRes.data });
+
+    if (pnlVersion === "v2") {
+      try {
+        const v2res = await getPnlV2(entity, mp.fromStr, mp.toStr);
+        setDataV2(v2res.data);
+      } catch (e) { showToast("⚠ New P&L failed: " + e.message); }
+    }
   } catch (e) { showToast("⚠ " + e.message); }
   finally { setLoading(false); }
-}, [entity, mp.fromStr, mp.toStr, mp.s.fromYear]);
+}, [entity, mp.fromStr, mp.toStr, mp.s.fromYear, pnlVersion]);
 
   const kpi=(section)=>{
     if(!data)return 0;
@@ -97,6 +107,13 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
           <span className="pg-badge">{entity} · {mp.fromLabel}–{mp.toLabel}</span>
         </div>
         <div className="pg-actions">
+        <button
+          className="pg-btn"
+          onClick={() => { setPnlVersion(v => v === "v1" ? "v2" : "v1"); setData(null); setDataV2(null); }}
+          style={{ marginRight: 6, background: pnlVersion === "v2" ? "#7F77DD" : undefined, color: pnlVersion === "v2" ? "#fff" : undefined }}
+        >
+          {pnlVersion === "v2" ? "New P&L (Beta)" : "Classic P&L"}
+        </button>
         <button className="pg-btn" onClick={rebuild} disabled={rebuilding}
           style={{background:rebuilding?"#888780":"#6B7280", marginRight:6, color:"white"}}>
           {rebuilding?"Rebuilding…":"Refresh"}
@@ -108,7 +125,7 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
 
       <div className="filter">
         <span className="f-lbl">Entity</span>
-          <select className="f-sel" value={entity} onChange={e => { setEntity(e.target.value); setData(null); }}>
+          <select className="f-sel" value={entity} onChange={e => { setEntity(e.target.value); setData(null); setDataV2(null); }}>
             {entities.map(e => (
               <option key={e.entity_code} value={e.entity_code}>{e.entity_code}</option>
             ))}
@@ -145,25 +162,34 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
 
       {view==="detail"&&(
         <div style={{flex:1,overflowY:"auto",padding:"16px 18px"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <button className={"btn-yoy"+(yoy?" on":"")} onClick={async()=>{
-            const next=!yoy; setYoy(next);
-            if(next && data && !lyData){
-              try{
-                const lyFrom=mp.fromStr.replace(/^(\d{4})/,y=>+y-1);
-                const lyTo=mp.toStr.replace(/^(\d{4})/,y=>+y-1);
-                const res=await getPnl(lyFrom,lyTo);
-                setLyData(res.data);
-              }catch(e){showToast("⚠ "+e.message);}
-            }
-          }}>
-            {yoy?"Hide comparison":"vs Last Year"}
-          </button>
-            <span style={{fontSize:10,color:"#888780"}}>Toggle prior year comparison</span>
-          </div>
+          {pnlVersion==="v1"&&(
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <button className={"btn-yoy"+(yoy?" on":"")} onClick={async()=>{
+              const next=!yoy; setYoy(next);
+              if(next && data && !lyData){
+                try{
+                  const lyFrom=mp.fromStr.replace(/^(\d{4})/,y=>+y-1);
+                  const lyTo=mp.toStr.replace(/^(\d{4})/,y=>+y-1);
+                  const res=await getPnl(lyFrom,lyTo);
+                  setLyData(res.data);
+                }catch(e){showToast("⚠ "+e.message);}
+              }
+            }}>
+              {yoy?"Hide comparison":"vs Last Year"}
+            </button>
+              <span style={{fontSize:10,color:"#888780"}}>Toggle prior year comparison</span>
+            </div>
+          )}
           <div className="two-col">
-            {data?<PnLTable data={data} yoy={yoy} lyData={lyData}/>:<div className="card" style={{padding:40,textAlign:"center",color:"#888780"}}>Select a date range and click Run Report.</div>}
-            {data&&<PnLSideCards data={data}/>}
+            {pnlVersion==="v2"
+              ? (dataV2
+                  ? <PnLTableV2 data={dataV2}/>
+                  : <div className="card" style={{padding:40,textAlign:"center",color:"#888780"}}>Select a date range and click Run Report.</div>)
+              : (data
+                  ? <PnLTable data={data} yoy={yoy} lyData={lyData}/>
+                  : <div className="card" style={{padding:40,textAlign:"center",color:"#888780"}}>Select a date range and click Run Report.</div>)
+            }
+            {pnlVersion==="v1"&&data&&<PnLSideCards data={data}/>}
           </div>
         </div>
       )}
