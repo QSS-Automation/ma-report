@@ -30,6 +30,7 @@ API.interceptors.request.use(config => {
 });
 
 export const getPnl         = (entity, from, to)       => API.get("/api/pnl",                     { params: { entity, from_date: from, to_date: to } });
+export const getPnlV2       = (entity, from, to)       => API.get("/api/pnl/v2",                  { params: { entity, from_date: from, to_date: to } });
 export const getBs          = (entity, from, to)       => API.get("/api/bs",                      { params: { entity, from_date: from, to_date: to } });
 export const getSales       = (entity, from, to)       => API.get("/api/adjustment/sales",        { params: { entity, from_date: from, to_date: to } });
 export const getPurchases   = (entity, from, to)       => API.get("/api/adjustment/purchases",    { params: { entity, from_date: from, to_date: to } });
