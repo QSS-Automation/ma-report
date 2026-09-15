@@ -8,8 +8,13 @@ const SECTION_KEYS={
 
 export default function PnLTable({data,yoy,lyData}){
   const [open,setOpen]=useState({});
+  // NEW — separate expand state for individual MFRS rows (per-row
+  // dropdown), independent of the section-level open/close above.
+  // Keyed by "section-label" so each MFRS year row expands on its own.
+  const [mfrsOpen,setMfrsOpen]=useState({});
   const cols=data.month_labels;
   const toggle=k=>setOpen(p=>({...p,[k]:!p[k]}));
+  const toggleMfrs=k=>setMfrsOpen(p=>({...p,[k]:!p[k]}));
   const anyOpen=Object.values(open).some(Boolean);
 
   return(
@@ -67,15 +72,35 @@ export default function PnLTable({data,yoy,lyData}){
               if((r.row_type==="detail"||r.row_type==="mfrs")&&!isOpen) return null;
               if(r.row_type==="detail"||r.row_type==="mfrs"){
                 const isMfrs=r.row_type==="mfrs";
+                // NEW — MFRS rows with children can expand to show their
+                // per-account breakdown. Plain detail rows never have
+                // children, so hasKids is always false for those.
+                const mfrsKey=k+"-"+r.label;
+                const hasKids=isMfrs && r.children && r.children.length>0;
+                const kidsOpen=!!mfrsOpen[mfrsKey];
                 return(
-                  <tr key={i} className="det-row" style={isMfrs?{background:"#fafaf8"}:{}}>
-                    <td style={{paddingLeft:24,fontSize:10,color:isMfrs?"#5f5e5a":"#1a1a18"}}>
-                      {isMfrs&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:2,background:"#BA7517",color:"#fff",fontWeight:700,marginRight:5}}>MFRS</span>}
-                      {r.label}
-                    </td>
-                    {r.months.map((v,j)=><td key={j} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:11,color:isMfrs?"#888780":"#1a1a18"}} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
-                    <td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:11,color:isMfrs?"#888780":"#1a1a18"}} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
-                  </tr>
+                  <React.Fragment key={i}>
+                    <tr className="det-row" style={isMfrs?{background:"#fafaf8",cursor:hasKids?"pointer":"default"}:{}}
+                      onClick={hasKids?()=>toggleMfrs(mfrsKey):undefined}>
+                      <td style={{paddingLeft:24,fontSize:10,color:isMfrs?"#5f5e5a":"#1a1a18"}}>
+                        {hasKids&&<span className={"chev"+(kidsOpen?" op":"")} style={{fontSize:9,color:"#888780",marginRight:5,display:"inline-block",transition:"transform .15s"}}>&#9658;</span>}
+                        {isMfrs&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:2,background:"#BA7517",color:"#fff",fontWeight:700,marginRight:5}}>MFRS</span>}
+                        {r.label}
+                      </td>
+                      {r.months.map((v,j)=><td key={j} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:11,color:isMfrs?"#888780":"#1a1a18"}} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
+                      <td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:11,color:isMfrs?"#888780":"#1a1a18"}} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
+                    </tr>
+                    {hasKids&&kidsOpen&&r.children.map((child,ci)=>(
+                      <tr key={i+"-"+ci} className="det-row" style={{background:"#fdfaf3"}}>
+                        <td style={{paddingLeft:44,fontSize:10,color:"#888780"}}>
+                          <span style={{fontSize:8,padding:"1px 5px",borderRadius:2,background:"#E8DFC8",color:"#7A6A00",fontWeight:700,marginRight:5}}>{child.acc_no||"—"}</span>
+                          {child.label}
+                        </td>
+                        {child.months.map((v,j)=><td key={j} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:10,color:"#888780"}} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
+                        <td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:10,color:"#888780"}} dangerouslySetInnerHTML={{__html:numFmt(Number(child.total))}}/>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 );
               }
               if(r.row_type==="net_sales") return(
