@@ -1,7 +1,7 @@
+// Fires a DOM event carrying the toast message. Shared/Toast.jsx listens for
+// this and renders it — kept as a plain function (not a hook) so every
+// existing call site (showToast("...")) works unchanged from anywhere,
+// including plain event handlers outside React's render tree.
 export function showToast(msg) {
-  const t = document.getElementById("qm-toast");
-  if (!t) return;
-  t.innerHTML = msg;
-  t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), 3000);
+  window.dispatchEvent(new CustomEvent("qm-toast", { detail: { msg } }));
 }

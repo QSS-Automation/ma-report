@@ -1,16 +1,39 @@
 import React,{useState,useCallback,useEffect} from "react";
+import { ChevronDown, ChevronRight, Download } from "lucide-react";
 import {getBs} from "../../services/api";
 import {useMonthPicker} from "../../hooks/useMonthPicker";
 import MonthPicker from "../Shared/MonthPicker";
 import {fmtMYR,fmtMYRK,numFmt} from "../../utils/fmt";
 import {showToast} from "../../utils/toast";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { PageHeader } from "../ui/page-header";
+import { PageShell, FilterBar, FilterLabel } from "../ui/page-shell";
+import { FilterPill } from "../ui/filter-pill";
+import { TableSkeleton, KpiSkeleton } from "../ui/skeleton";
+import { EmptyState } from "../ui/empty-state";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
+import { cn } from "../../lib/utils";
 
 const BS_ORDER=["FA","OA","CA","RE","CL","LL","OL"];
 const BS_LABEL={FA:"Fixed Assets",OA:"Other Assets",CA:"Current Assets",RE:"Retained Earnings",CL:"Current Liabilities",LL:"Long-term Liabilities",OL:"Other Liabilities"};
 const ASSET_TYPES=new Set(["FA","OA","CA","RE"]);
 const LIAB_TYPES=new Set(["CL","LL","OL"]);
 
-export default function BS({ entity = "QM", setEntity, entities = [] }){
+const PRESETS = [
+  { key: "ty", label: "This year" },
+  { key: "ly", label: "Last year" },
+  { key: "tm", label: "This month" },
+  { key: "lm", label: "Last month" },
+];
+
+// Sticky first column keeps the account/section label visible while the
+// month columns scroll horizontally — each row style below needs its own
+// *opaque* background repeated on the sticky cell (a semi-transparent bg
+// would let the scrolling columns show through underneath it).
+const STICKY = "sticky left-0 z-10";
+
+export default function BS({ entity = "QM" }){
   const now=new Date();
   const mp=useMonthPicker(now.getFullYear(),0,now.getFullYear(),11);
   const [data,setData]=useState(null);
@@ -36,8 +59,8 @@ export default function BS({ entity = "QM", setEntity, entities = [] }){
   const toggle=k=>setOpen(p=>({...p,[k]:!p[k]}));
   const anyOpen=Object.values(open).some(Boolean);
 
-  const N=v=>{const n=Number(v);return<td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12}} dangerouslySetInnerHTML={{__html:numFmt(n)}}/>;};
-  useEffect(() => { setData(null); }, [entity]);
+  // Run on first open and whenever the entity changes.
+  useEffect(() => { setData(null); run(); }, [entity]);
   const exportCSV = () => {
   if (!data) { showToast("⚠ Run report first."); return; }
   const headers = ["Acc No","Acc Desc","Acc Type","OB Balance","Bring Fwd","Period Net","Closing", ...(data.month_labels||[])];
@@ -58,123 +81,134 @@ export default function BS({ entity = "QM", setEntity, entities = [] }){
   a.click();
 };
 
+  const kpis = [
+    { label: "Total Assets", val: totAssets, tone: "text-primary", sub: "FA + CA" },
+    { label: "Net Current Assets", val: ca - cl, tone: ca - cl >= 0 ? "text-success" : "text-destructive", sub: "CA − CL" },
+    { label: "Total Liabilities", val: totLiab, tone: "text-warning", sub: "CL + LL + OL" },
+    { label: "Equity", val: totAssets - totLiab, tone: "text-primary", sub: "Assets − Liabilities" },
+  ];
+
   return(
-    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",minHeight:0}}>
-      <div className="pg-hdr">
-        <div className="pg-title">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#185FA5" strokeWidth="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12M5.5 3v3.5M10.5 3v3.5"/></svg>
-          Balance Sheet <span className="pg-badge">{entity} · {mp.fromLabel}–{mp.toLabel}</span>
-        </div>
-        <div className="pg-actions" onClick={exportCSV}><button className="pg-btn">Export CSV</button></div>
-      </div>
-      <div className="filter">
-        <span className="f-lbl">Entity</span>
-            <select className="f-sel" value={entity} onChange={e => { setEntity(e.target.value); setData(null); }}>
-              {entities.map(e => (
-                <option key={e.entity_code} value={e.entity_code}>{e.entity_code}</option>
+    <PageShell>
+          <PageHeader
+            eyebrow="Financial Reports"
+            title="Balance Sheet"
+            subtitle={`${entity} · ${mp.fromLabel}–${mp.toLabel}`}
+            actions={
+              <Button variant="outline" size="sm" onClick={exportCSV}>
+                <Download className="h-3.5 w-3.5" /> Export CSV
+              </Button>
+            }
+          />
+
+          <FilterBar>
+            <FilterLabel>Period</FilterLabel>
+            <MonthPicker label={mp.fromLabel} state={mp.s} side="from" onSelect={mp.sel}/>
+            <span>–</span>
+            <MonthPicker label={mp.toLabel} state={mp.s} side="to" onSelect={mp.sel}/>
+            {PRESETS.map(p=>(
+              <FilterPill key={p.key} active={preset===p.key} onClick={()=>{setPreset(p.key);mp.preset(p.key);}}>
+                {p.label}
+              </FilterPill>
+            ))}
+            <Button className="ml-auto" size="lg" onClick={run} disabled={loading}>{loading?"Loading…":"Run Report"}</Button>
+          </FilterBar>
+
+          {(data||loading)&&(
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
+              {loading&&!data ? <KpiSkeleton/> : kpis.map(k => (
+                <Card key={k.label} className="min-w-0 px-3.5 py-2.5">
+                  <div className="truncate text-xs text-muted-foreground">{k.label}</div>
+                  <div className={cn("mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums", k.tone)}>{fmtMYRK(k.val)}</div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{k.sub}</div>
+                </Card>
               ))}
-            </select>
-            <div className="f-div"/>
-        <span className="f-lbl">From</span>
-        <MonthPicker label={mp.fromLabel} state={mp.s} side="from" onSelect={mp.sel}/>
-        <span className="f-lbl">To</span>
-        <MonthPicker label={mp.toLabel} state={mp.s} side="to" onSelect={mp.sel}/>
-        <div className="f-div"/>
-        {["ty","ly","tm","lm"].map(p=>(
-          <button key={p} className={"f-pre"+(preset===p?" on":"")} onClick={()=>{setPreset(p);mp.preset(p);}}>
-            {p==="ty"?"This year":p==="ly"?"Last year":p==="tm"?"This month":"Last month"}
-          </button>
-        ))}
-        <button className="run" onClick={run} disabled={loading}>{loading?"Loading…":"Run Report"}</button>
-      </div>
+            </div>
+          )}
 
-      {data&&(
-        <div style={{padding:"14px 18px",flexShrink:0,background:"#fff",borderBottom:"1px solid #e8e7e0"}}>
-          <div className="kpi-row" style={{marginBottom:0}}>
-            <div className="kpi"><div className="kpi-lbl">Total Assets</div><div className="kpi-val b">{fmtMYRK(totAssets)}</div><div className="kpi-sub">FA + CA</div></div>
-            <div className="kpi"><div className="kpi-lbl">Net Current Assets</div><div className={"kpi-val "+(ca-cl>=0?"g":"r")}>{fmtMYRK(ca-cl)}</div><div className="kpi-sub">CA − CL</div></div>
-            <div className="kpi"><div className="kpi-lbl">Total Liabilities</div><div className="kpi-val a">{fmtMYRK(totLiab)}</div><div className="kpi-sub">CL + LL + OL</div></div>
-            <div className="kpi"><div className="kpi-lbl">Equity</div><div className="kpi-val b">{fmtMYRK(totAssets-totLiab)}</div><div className="kpi-sub">Assets − Liabilities</div></div>
-          </div>
-        </div>
-      )}
-
-      <div className="content">
-        <div className="card">
-          <div className="card-hdr">
-            <div className="card-title">Balance Sheet — Detail</div>
-            <div className="card-sub" style={{marginLeft:"auto"}}>{entity} · {mp.fromLabel}–{mp.toLabel}</div>
-          </div>
-          {data&&(
-            <>
-              <div className="expand-bar" onClick={()=>{const all=!anyOpen;const nxt={};BS_ORDER.forEach(k=>{nxt[k]=all;});setOpen(nxt);}}>
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#185FA5" strokeWidth="1.5" style={{transition:"transform .15s",transform:anyOpen?"rotate(180deg)":"none"}}><path d="M2 4l4 4 4-4"/></svg>
+          <Card className="overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-[18px] pb-2.5 pt-3.5">
+              <h3 className="text-base font-semibold">Balance Sheet — Detail</h3>
+              <p className="text-xs text-muted-foreground">{entity} · {mp.fromLabel}–{mp.toLabel}</p>
+            </div>
+            {data?.rows?.length>0&&(
+              <>
+              <button
+                type="button"
+                className="mx-4 mb-2 flex select-none items-center gap-1.5 rounded text-[12px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={()=>{const all=!anyOpen;const nxt={};BS_ORDER.forEach(k=>{nxt[k]=all;});setOpen(nxt);}}
+              >
+                {anyOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                 <span>{anyOpen?"Collapse all sections":"Expand all sections"}</span>
-              </div>
-              <div className="pnl-scroll">
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead><tr style={{background:"#fafaf8"}}>
-                    <th style={{padding:"7px 10px",fontSize:10,fontWeight:700,color:"#888780",textTransform:"uppercase",letterSpacing:".05em",borderBottom:"1px solid #e8e7e0",textAlign:"left",minWidth:280}}>Account</th>
+              </button>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className={cn(STICKY, "min-w-[200px] bg-card")}>Account</TableHead>
                       {(data.month_labels||[]).map(m=>(
-                        <th key={m} style={{padding:"7px 10px",fontSize:10,fontWeight:700,color:"#888780",textTransform:"uppercase",borderBottom:"1px solid #e8e7e0",textAlign:"right",minWidth:110,whiteSpace:"nowrap"}}>{m}</th>
+                        <TableHead key={m} className="min-w-[110px] text-right">{m}</TableHead>
                       ))}
-                  </tr></thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {BS_ORDER.filter(t=>groups[t]&&groups[t].length>0).map(t=>{
                       const sTotal=secTotal(t); const isOpen=open[t];
                       return(
                         <React.Fragment key={t}>
-                          <tr className="sec-row" onClick={()=>toggle(t)}>
-                            <td><span className={"chev"+(isOpen?" op":"")}>&#9658;</span>{BS_LABEL[t]}</td>
+                          <TableRow className="cursor-pointer bg-muted/60 hover:bg-muted" onClick={()=>toggle(t)}>
+                            <TableCell className={cn(STICKY, "flex items-center gap-1.5 bg-[hsl(var(--muted))] font-semibold")}>
+                              {isOpen ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                              {BS_LABEL[t]}
+                            </TableCell>
                             {(data.month_labels||[]).map((m,i)=>(
-                              <td key={m} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12,fontWeight:600}}>
+                              <TableCell key={m} className="text-right font-mono font-semibold">
                                 {i===data.month_labels.length-1 ? fmtMYR(sTotal) : ""}
-                              </td>
+                              </TableCell>
                             ))}
-                          </tr>
+                          </TableRow>
                           {isOpen&&(groups[t]||[]).map((r,i)=>(
-                            <tr key={i} className="det-row">
-                              <td style={{paddingLeft:24,color:"#888780",fontSize:11}}>{r.acc_no} {r.acc_desc}</td>
+                            <TableRow key={i}>
+                              <TableCell className={cn(STICKY, "bg-card pl-7 text-[12px] text-muted-foreground")}>{r.acc_no} {r.acc_desc}</TableCell>
                               {(data.month_labels||[]).map(m=>(
-                                  <td key={m} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12}}
+                                  <TableCell key={m} className="text-right font-mono"
                                     dangerouslySetInnerHTML={{__html:numFmt(Number(r.monthly?.[m]??0))}}/>
                                 ))}
-                            </tr>
+                            </TableRow>
                           ))}
-                          {isOpen&&<tr className="sub-row">
-                            <td>Total {BS_LABEL[t]}</td>
+                          {isOpen&&<TableRow className="bg-muted/40">
+                            <TableCell className={cn(STICKY, "bg-[hsl(var(--muted))] font-semibold")}>Total {BS_LABEL[t]}</TableCell>
                             {(data.month_labels||[]).map((m,i)=>(
-                              <td key={m} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontWeight:600}}>
+                              <TableCell key={m} className="text-right font-mono font-semibold">
                                 {i===data.month_labels.length-1 ? fmtMYR(sTotal) : ""}
-                              </td>
+                              </TableCell>
                             ))}
-                          </tr>}
+                          </TableRow>}
                         </React.Fragment>
                       );
                     })}
                     {[
-                      {label:"Net Current Assets", val:ca-cl, color:"#1D9E75"},
-                      {label:"Total Assets",       val:totAssets, color:"#185FA5"},
-                      {label:"Total Liabilities",  val:totLiab,   color:"#BA7517"},
-                    ].map(({label,val,color})=>(
-                      <tr key={label} className="sum-row">
-                        <td style={{fontWeight:700,color}}>{label}</td>
+                      {label:"Net Current Assets", val:ca-cl, tone:"text-success"},
+                      {label:"Total Assets",       val:totAssets, tone:"text-primary"},
+                      {label:"Total Liabilities",  val:totLiab,   tone:"text-warning"},
+                    ].map(({label,val,tone})=>(
+                      <TableRow key={label} className="border-y-2 border-primary/20 bg-accent">
+                        <TableCell className={cn(STICKY, "bg-[hsl(var(--accent))] font-bold", tone)}>{label}</TableCell>
                         {(data.month_labels||[]).map((m,i)=>(
-                          <td key={m} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontWeight:700,color}}>
+                          <TableCell key={m} className={cn("text-right font-mono font-bold", tone)}>
                             {i===data.month_labels.length-1 ? fmtMYR(val) : ""}
-                          </td>
+                          </TableCell>
                         ))}
-                      </tr>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
-            </>
-          )}
-          {!data&&<div style={{padding:40,textAlign:"center",color:"#888780"}}>Select a date range and click Run Report.</div>}
-          <div style={{padding:"6px 13px",background:"#fafaf8",borderTop:"1px solid #e8e7e0",fontSize:9,color:"#888780"}}>{entity} · MYR · {mp.fromLabel}–{mp.toLabel}</div>
-        </div>
-      </div>
-    </div>
+              </>
+            )}
+            {!data?.rows?.length&&(loading ? <TableSkeleton/> : <EmptyState/>)}
+            <div className="px-4 py-2.5 text-[11px] text-muted-foreground">{entity} · MYR · {mp.fromLabel}–{mp.toLabel}</div>
+          </Card>
+    </PageShell>
   );
 }

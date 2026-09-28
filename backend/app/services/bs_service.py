@@ -15,17 +15,17 @@ WITH HistoricalPnL AS (
         CASE WHEN acc_type IN ('SL','OI') THEN home_cr-home_dr ELSE 0 END
       - CASE WHEN acc_type IN ('SA','EP','CO','TX') THEN home_dr-home_cr ELSE 0 END
     ) AS HomeNetPnL
-    FROM staging_{entity}.RR_gl_lines
+    FROM staging_rr_{entity}.RR_gl_lines
     WHERE is_pnl_account=1 AND trans_date < :sd
 ),
 BringForward AS (
     SELECT acc_no, SUM(home_dr) BF_HomeDR, SUM(home_cr) BF_HomeCR
-    FROM staging_{entity}.RR_gl_lines
+    FROM staging_rr_{entity}.RR_gl_lines
     WHERE trans_date < :sd AND is_pnl_account=0 GROUP BY acc_no
 ),
 CurrentPeriod AS (
     SELECT acc_no, SUM(home_dr) Period_HomeDR, SUM(home_cr) Period_HomeCR
-    FROM staging_{entity}.RR_gl_lines
+    FROM staging_rr_{entity}.RR_gl_lines
     WHERE trans_date BETWEEN :sd AND :ed GROUP BY acc_no
 ),
 HPnL AS (SELECT HomeNetPnL FROM HistoricalPnL)
@@ -56,7 +56,7 @@ SELECT ob.acc_no,ob.acc_desc,ob.parent_acc_no,ob.acc_type,
          ELSE (ob.ob_home_dr+IFNULL(bf.BF_HomeDR,0)+IFNULL(cp.Period_HomeDR,0))
              -(ob.ob_home_cr+IFNULL(bf.BF_HomeCR,0)+IFNULL(cp.Period_HomeCR,0))
     END AS closing_balance
-FROM staging_{entity}.RR_ob_summary ob
+FROM staging_rr_{entity}.RR_ob_summary ob
 LEFT JOIN BringForward bf ON ob.acc_no=bf.acc_no
 LEFT JOIN CurrentPeriod cp ON ob.acc_no=cp.acc_no
 WHERE ob.is_bs_account=1

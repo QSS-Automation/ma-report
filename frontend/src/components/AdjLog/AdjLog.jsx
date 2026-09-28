@@ -1,91 +1,146 @@
 import React,{useState, useEffect} from "react";
+import { Download } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { getLog } from "../../services/api";
+import { useMonthPicker } from "../../hooks/useMonthPicker";
+import MonthPicker from "../Shared/MonthPicker";
+import { showToast } from "../../utils/toast";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
+import { PageHeader } from "../ui/page-header";
+import { PageShell, FilterBar, FilterLabel } from "../ui/page-shell";
+import { TableSkeleton } from "../ui/skeleton";
+import { EmptyState } from "../ui/empty-state";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../ui/select";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
+import { cn } from "../../lib/utils";
 
-const SAMPLE=[
-  {ts:"03 Jan 2025 14:22",user:"Ahmad Razif",type:"split",tab:"sales",ref:"INV-2025-001",detail:"Split PS 200,000 + LIC 120,000. Contract 2026-01-15 → 2027-01-14",period:"Jan 2025"},
-  {ts:"05 Jan 2025 09:14",user:"Farah Nadia",type:"split",tab:"pur",ref:"SUP-2025-041",detail:"Split PS 300,000 + LIC 150,000. Contract 2025-12-01 → 2026-11-30",period:"Jan 2025"},
-  {ts:"07 Jan 2025 11:03",user:"Ahmad Razif",type:"edit",tab:"sales",ref:"INV-2025-002",detail:"Category changed: Unassigned → PS. Start 2025-01-07, End 2025-12-31",period:"Jan 2025"},
-  {ts:"28 Jan 2025 09:00",user:"Finance Manager",type:"newline",tab:"sales",ref:"DR-2025-001",detail:"New deferred revenue line. LIC 480,000. Contract 2025-02-01 → 2026-01-31",period:"Jan 2025"},
-];
-const BADGE={split:"log-split",newline:"log-newline",edit:"log-edit",unlock:"log-unlock"};
+// Sticky first (identifying) column keeps the invoice/ref visible while the
+// rest of the row scrolls horizontally — needs its own *opaque* background
+// matching its row so scrolled columns don't bleed through underneath it.
+const STICKY = "sticky left-0 z-10";
+
+const BADGE_VARIANT={split:"default",newline:"success",edit:"warning",unlock:"destructive"};
 const LABEL={split:"SPLIT",newline:"NEW LINE",edit:"EDIT",unlock:"UNLOCK REQ"};
 
-export default function AdjLog({ entity = "QM", entities = [] }) {
+// The backend and mock data use different field names/values for the
+// action and the Sales/Purchases side — normalise once here.
+const rowType = r => r.action_type || r.type;
+const isSalesRow = r => String(r.tab || r.journal_type || "").toLowerCase().startsWith("s");
+
+export default function AdjLog({ entity = "QM" }) {
   const { user } = useAuth();
-  const [rows, setRows] = useState([]);
-  const [type,setType]=useState("all");
-  const [fEntity, setFEntity] = useState("all");
-  const [tab,setTab]=useState("all");
   const now=new Date();
-  const [fromDate,setFromDate]=useState(now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-01");
-  const [toDate,setToDate]=useState(now.getFullYear()+"-12-31");
-  
+  const mp=useMonthPicker(now.getFullYear(),now.getMonth(),now.getFullYear(),11);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [type,setType]=useState("all");
+  const [tab,setTab]=useState("all");
+
+  // The backend already filters by entity and date range, so the list
+  // below only applies the Type / Tab filters client-side. (A client-side
+  // date filter used to compare the display timestamp "28 Aug 2026" to ISO
+  // dates as plain strings, which kept/dropped rows at random.)
   useEffect(() => {
     if (!user) return;
-    getLog(entity || "QM", user.role, user.user_id,  fromDate, toDate)
-      .then(r => setRows(r.data))
-      .catch(() => setRows([]));
-  }, [entity, user?.user_id,fromDate, toDate]);
-  
+    setLoading(true);
+    getLog(entity || "QM", user.role, user.user_id, mp.fromStr, mp.toStr)
+      .then(r => setRows(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, [entity, user?.user_id, mp.fromStr, mp.toStr]);
+
   const filtered=rows.filter(r=>
-    (type==="all"||r.action_type===type||r.type===type) &&
-    (tab==="all"||r.journal_type===tab||r.tab===tab) &&
-    (fEntity==="all"||r.entity===fEntity) &&
-    (!r.ts||(r.ts>=fromDate&&r.ts<=toDate+"\uffff"))
+    (type==="all"||rowType(r)===type) &&
+    (tab==="all"||(tab==="sales")===isSalesRow(r))
   );
+
+  const exportCSV = () => {
+    if (!filtered.length) { showToast("⚠ No log entries to export."); return; }
+    const headers = ["Timestamp","User","Action","Tab","Invoice / Ref","Detail","Period"];
+    const lines = filtered.map(r => [r.ts, r.user, LABEL[rowType(r)] || rowType(r), isSalesRow(r) ? "Sales" : "Purchases", r.ref, r.detail, r.period]);
+    const csv = [headers, ...lines]
+      .map(l => l.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `adjustment_log_${entity}_${mp.fromStr}_${mp.toStr}.csv`;
+    a.click();
+  };
+
   return(
-    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",minHeight:0}}>
-      <div className="pg-hdr">
-        <div className="pg-title">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#185FA5" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 6h6M5 9h4"/></svg>
-          Adjustment Log <span className="pg-badge">All activity</span>
+    <PageShell>
+      <PageHeader
+        eyebrow="Adjustment"
+        title="Log"
+        subtitle={`${entity} · ${mp.fromLabel}–${mp.toLabel} · all activity`}
+        actions={<Button variant="outline" size="sm" onClick={exportCSV}><Download className="h-3.5 w-3.5" /> Export CSV</Button>}
+      />
+
+      <FilterBar>
+        <FilterLabel>Period</FilterLabel>
+        <MonthPicker label={mp.fromLabel} state={mp.s} side="from" onSelect={mp.sel}/>
+        <span>–</span>
+        <MonthPicker label={mp.toLabel} state={mp.s} side="to" onSelect={mp.sel}/>
+        <FilterLabel>Type</FilterLabel>
+        <Select value={type} onValueChange={setType}>
+          <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="split">Split</SelectItem>
+            <SelectItem value="newline">New line</SelectItem>
+            <SelectItem value="edit">Edit</SelectItem>
+            <SelectItem value="unlock">Unlock req.</SelectItem>
+          </SelectContent>
+        </Select>
+        <FilterLabel>Tab</FilterLabel>
+        <Select value={tab} onValueChange={setTab}>
+          <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="sales">Sales</SelectItem>
+            <SelectItem value="pur">Purchases</SelectItem>
+          </SelectContent>
+        </Select>
+      </FilterBar>
+
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-[18px] pb-2.5 pt-3.5">
+          <h3 className="text-base font-semibold">Adjustment log</h3>
+          <p className="text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "entry" : "entries"}</p>
         </div>
-        <div className="pg-actions"><button className="pg-btn">Export CSV</button></div>
-      </div>
-      <div className="filter">
-        <span className="f-lbl">Entity</span>
-          <select className="f-sel" value={fEntity} onChange={e => setFEntity(e.target.value)}>
-            <option value="all">All</option>
-            {entities.map(e => <option key={e.entity_code} value={e.entity_code}>{e.entity_code}</option>)}
-          </select>
-          <div className="f-div"/>
-        <span className="f-lbl">Type</span>
-        <select className="f-sel" value={type} onChange={e=>setType(e.target.value)}>
-          <option value="all">All</option><option value="split">Split</option>
-          <option value="newline">New line</option><option value="edit">Edit</option><option value="unlock">Unlock req.</option>
-        </select>
-        <div className="f-div"/>
-        <span className="f-lbl">Tab</span>
-        <select className="f-sel" value={tab} onChange={e=>setTab(e.target.value)}>
-          <option value="all">All</option><option value="sales">Sales</option><option value="pur">Purchases</option>
-        </select>
-        <div className="f-div"/>
-        <span className="f-lbl">From</span><input type="date" className="f-date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/>
-        <span className="f-lbl">To</span><input type="date" className="f-date" value={toDate} onChange={e=>setToDate(e.target.value)}/>
-      </div>
-      <div className="content" style={{padding:0}}>
-        <table style={{width:"100%",borderCollapse:"collapse"}}>
-          <thead><tr style={{background:"#fafaf8"}}>
-            {["Timestamp","User","Action","Tab","Invoice / Ref","Detail","Period"].map(h=>(
-              <th key={h} style={{padding:"8px 12px",fontSize:9,fontWeight:700,color:"#888780",textTransform:"uppercase",borderBottom:"1px solid #e8e7e0",whiteSpace:"nowrap"}}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {filtered.map((r,i)=>(
-              <tr key={i} className="log-row">
-                <td>{r.ts}</td>
-                <td>{r.user}</td>
-                <td><span className={"log-badge "+BADGE[r.type]}>{LABEL[r.type]}</span></td>
-                <td><span className={"bdg "+(r.tab==="sales"?"bdg-ps":"")} style={r.tab==="pur"?{fontSize:8,background:"#E8F5E9",color:"#1B5E20"}:{fontSize:8}}>{r.tab==="sales"?"Sales":"Purchases"}</span></td>
-                <td style={{fontFamily:"Courier New,monospace",color:"#185FA5",fontSize:10}}>{r.ref}</td>
-                <td style={{color:"#5f5e5a",maxWidth:300}}>{r.detail}</td>
-                <td style={{color:"#888780",whiteSpace:"nowrap"}}>{r.period}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+        {loading && !rows.length ? <TableSkeleton cols={7} /> : !filtered.length ? (
+          <EmptyState title="No log entries" hint="Nothing matches this period and filter combination." />
+        ) : (
+          <div className="overflow-x-auto">
+            <Table className="min-w-[900px]">
+              <TableHeader>
+                <TableRow>
+                  {["Timestamp","User","Action","Tab","Invoice / Ref","Detail","Period"].map(h=>(
+                    <TableHead key={h} className={cn(h==="Invoice / Ref" && [STICKY, "min-w-[110px] bg-card"])}>{h}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((r,i)=>(
+                  <TableRow key={i}>
+                    <TableCell className="whitespace-nowrap">{r.ts}</TableCell>
+                    <TableCell>{r.user}</TableCell>
+                    <TableCell><Badge variant={BADGE_VARIANT[rowType(r)]}>{LABEL[rowType(r)] || rowType(r)}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant={isSalesRow(r)?"default":"success"}>{isSalesRow(r)?"Sales":"Purchases"}</Badge>
+                    </TableCell>
+                    <TableCell className={cn(STICKY, "bg-card font-mono text-[11px] text-primary")}>{r.ref}</TableCell>
+                    <TableCell className="max-w-[300px] text-muted-foreground">{r.detail}</TableCell>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.period}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Card>
+    </PageShell>
   );
 }

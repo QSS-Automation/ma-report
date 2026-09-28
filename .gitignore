@@ -1,0 +1,21 @@
+# ── Secrets / local-only settings — never commit ──
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# ── Dependencies & build output ──
+node_modules/
+frontend/build/
+backend/venv/
+venv/
+__pycache__/
+*.pyc
+
+# ── Local tooling / scratch files ──
+.claude/
+backend_backup/
+*.zip
+DS_Home_Ops_Hub_Mockup.html

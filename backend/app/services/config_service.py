@@ -12,7 +12,7 @@ class ConfigService:
                 fiscal_year_start,
                 IFNULL(staging_refreshed_at, NULL) staging_refreshed_at,
                 IFNULL(staging_refreshed_by, NULL) staging_refreshed_by
-            FROM curated_{entity}.ref_config
+            FROM curated_acc_{entity}.ref_config
             WHERE company_code=:c LIMIT 1
         """, {"c": entity})
         if not rows: raise ValueError(f"ref_config not found for entity {entity}")
@@ -32,7 +32,7 @@ class ConfigService:
     def mark_refreshed(self, db: Session, user: str, ts: datetime,
                         entity: str = "QM") -> None:
         db.execute(text(f"""
-            UPDATE curated_{entity}.ref_config
+            UPDATE curated_acc_{entity}.ref_config
                SET staging_refreshed_at=:ts, staging_refreshed_by=:u
              WHERE company_code=:c
         """), {"ts": ts, "u": user, "c": entity})

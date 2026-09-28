@@ -33,24 +33,24 @@ class StagingService:
 
     def _gl_sql(self, entity: str) -> str:
         return f"""
-DROP TABLE IF EXISTS staging_{entity}.RR_gl_lines;
-CREATE TABLE staging_{entity}.RR_gl_lines AS
+DROP TABLE IF EXISTS staging_rr_{entity}.RR_gl_lines;
+CREATE TABLE staging_rr_{entity}.RR_gl_lines AS
 SELECT 'autocount' AS source, fj.gl_dtl_key AS source_key, fj.acc_no, fj.de_acc_no,
     fj.acc_desc, fj.acc_type, fj.is_pnl_account, fj.sort_group, da.parent_acc_no,
     da.section, da.is_bs_account, da.is_re_account, fj.journal_type, fj.trans_date,
     fj.proj_no, fj.ref_no1, fj.ref_no2, fj.description, fj.home_dr, fj.home_cr,
     fj.amount, NOW() AS stg_loaded_at
-FROM curated_{entity}.fact_journal fj
-LEFT JOIN curated_{entity}.dim_account da ON fj.acc_no=da.acc_no
+FROM curated_acc_{entity}.fact_journal fj
+LEFT JOIN curated_acc_{entity}.dim_account da ON fj.acc_no=da.acc_no
 UNION ALL
 SELECT 'manual' AS source, fa.adj_key AS source_key, fa.acc_no, fa.de_acc_no,
     fa.acc_desc, fa.acc_type, fa.is_pnl_account, fa.sort_group, da.parent_acc_no,
     da.section, da.is_bs_account, da.is_re_account, fa.journal_type, fa.trans_date,
     fa.proj_no, fa.ref_no1, fa.ref_no2, fa.description, fa.home_dr, fa.home_cr,
     fa.amount, NOW() AS stg_loaded_at
-FROM curated_{entity}.fact_adj_line fa
-LEFT JOIN curated_{entity}.dim_account da ON fa.acc_no=da.acc_no;
-ALTER TABLE staging_{entity}.RR_gl_lines
+FROM curated_acc_{entity}.fact_adj_line fa
+LEFT JOIN curated_acc_{entity}.dim_account da ON fa.acc_no=da.acc_no;
+ALTER TABLE staging_rr_{entity}.RR_gl_lines
     ADD PRIMARY KEY (source,source_key),
     ADD INDEX idx_trans_date(trans_date), ADD INDEX idx_acc_no(acc_no),
     ADD INDEX idx_jt_date(journal_type,trans_date),
@@ -62,21 +62,21 @@ ALTER TABLE staging_{entity}.RR_gl_lines
 
     def _ob_sql(self, entity: str) -> str:
         return f"""
-DROP TABLE IF EXISTS staging_{entity}.RR_ob_summary;
-CREATE TABLE staging_{entity}.RR_ob_summary AS
+DROP TABLE IF EXISTS staging_rr_{entity}.RR_ob_summary;
+CREATE TABLE staging_rr_{entity}.RR_ob_summary AS
 SELECT ob.acc_no, ob.acc_desc, ob.acc_type, ob.parent_acc_no, ob.is_bs_account,
     ob.ob_home_dr, ob.ob_home_cr, ob.ob_home_balance, NOW() AS stg_loaded_at
-FROM curated_{entity}.fact_ob ob WHERE ob.is_bs_account=1;
-ALTER TABLE staging_{entity}.RR_ob_summary ADD PRIMARY KEY(acc_no), ADD INDEX idx_is_bs(is_bs_account)
+FROM curated_acc_{entity}.fact_ob ob WHERE ob.is_bs_account=1;
+ALTER TABLE staging_rr_{entity}.RR_ob_summary ADD PRIMARY KEY(acc_no), ADD INDEX idx_is_bs(is_bs_account)
 """
 
     def _mfrs_sql(self, entity: str) -> str:
         return f"""
-DROP TABLE IF EXISTS staging_{entity}.RR_mfrs;
-CREATE TABLE staging_{entity}.RR_mfrs AS
+DROP TABLE IF EXISTS staging_rr_{entity}.RR_mfrs;
+CREATE TABLE staging_rr_{entity}.RR_mfrs AS
 SELECT 'mfrs_sales' AS source_table, 'SALES' AS journal_type,
     ms.gl_dtl_key, ms.doc_no, ms.split_index, YEAR(ms.recog_month) AS recognised_year,
-    fj.trans_date, fj.description, fj.proj_no, ms.total_days, ms.net_amount,
+    fj.trans_date, fj.description, fj.proj_no, fj.acc_no, ms.total_days, ms.net_amount,
     SUM(CASE WHEN MONTH(ms.recog_month)=1  THEN ms.recognised_amt ELSE NULL END) m01,
     SUM(CASE WHEN MONTH(ms.recog_month)=2  THEN ms.recognised_amt ELSE NULL END) m02,
     SUM(CASE WHEN MONTH(ms.recog_month)=3  THEN ms.recognised_amt ELSE NULL END) m03,
@@ -90,14 +90,14 @@ SELECT 'mfrs_sales' AS source_table, 'SALES' AS journal_type,
     SUM(CASE WHEN MONTH(ms.recog_month)=11 THEN ms.recognised_amt ELSE NULL END) m11,
     SUM(CASE WHEN MONTH(ms.recog_month)=12 THEN ms.recognised_amt ELSE NULL END) m12,
     MAX(ms.locked_at) locked_at, MAX(ms.locked_by) locked_by, NOW() stg_loaded_at
-FROM curated_{entity}.mfrs_sales ms
-LEFT JOIN curated_{entity}.fact_journal fj ON ms.gl_dtl_key=fj.gl_dtl_key
+FROM curated_acc_{entity}.mfrs_sales ms
+LEFT JOIN curated_acc_{entity}.fact_journal fj ON ms.gl_dtl_key=fj.gl_dtl_key
 GROUP BY ms.gl_dtl_key,ms.doc_no,ms.split_index,YEAR(ms.recog_month),
-    fj.trans_date,fj.description,fj.proj_no,ms.total_days,ms.net_amount
+    fj.trans_date,fj.description,fj.proj_no,fj.acc_no,ms.total_days,ms.net_amount
 UNION ALL
 SELECT 'mfrs_purchases','PURCHASE',
     mp.gl_dtl_key,mp.doc_no,mp.split_index,YEAR(mp.recog_month),
-    fj.trans_date,fj.description,fj.proj_no,mp.total_days,mp.net_amount,
+    fj.trans_date,fj.description,fj.proj_no,fj.acc_no,mp.total_days,mp.net_amount,
     SUM(CASE WHEN MONTH(mp.recog_month)=1  THEN mp.recognised_amt ELSE NULL END),
     SUM(CASE WHEN MONTH(mp.recog_month)=2  THEN mp.recognised_amt ELSE NULL END),
     SUM(CASE WHEN MONTH(mp.recog_month)=3  THEN mp.recognised_amt ELSE NULL END),
@@ -111,12 +111,13 @@ SELECT 'mfrs_purchases','PURCHASE',
     SUM(CASE WHEN MONTH(mp.recog_month)=11 THEN mp.recognised_amt ELSE NULL END),
     SUM(CASE WHEN MONTH(mp.recog_month)=12 THEN mp.recognised_amt ELSE NULL END),
     MAX(mp.locked_at),MAX(mp.locked_by),NOW()
-FROM curated_{entity}.mfrs_purchases mp
-LEFT JOIN curated_{entity}.fact_journal fj ON mp.gl_dtl_key=fj.gl_dtl_key
+FROM curated_acc_{entity}.mfrs_purchases mp
+LEFT JOIN curated_acc_{entity}.fact_journal fj ON mp.gl_dtl_key=fj.gl_dtl_key
 GROUP BY mp.gl_dtl_key,mp.doc_no,mp.split_index,YEAR(mp.recog_month),
-    fj.trans_date,fj.description,fj.proj_no,mp.total_days,mp.net_amount;
-ALTER TABLE staging_{entity}.RR_mfrs
+    fj.trans_date,fj.description,fj.proj_no,fj.acc_no,mp.total_days,mp.net_amount;
+ALTER TABLE staging_rr_{entity}.RR_mfrs
     ADD PRIMARY KEY(source_table,gl_dtl_key,split_index,recognised_year),
     ADD INDEX idx_journal_type(journal_type), ADD INDEX idx_recog_year(recognised_year),
-    ADD INDEX idx_gl_dtl_key(gl_dtl_key), ADD INDEX idx_doc_no(doc_no)
+    ADD INDEX idx_gl_dtl_key(gl_dtl_key), ADD INDEX idx_doc_no(doc_no),
+    ADD INDEX idx_acc_no(acc_no)
 """

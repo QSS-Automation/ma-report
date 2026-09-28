@@ -1,57 +1,56 @@
-import React,{useState,useCallback,useRef,useEffect} from "react";
-import ReactDOM from "react-dom";
+import React,{useState,useCallback,useRef,useEffect,useLayoutEffect} from "react";
+import {Download,Lock,Unlock,Plus,ClipboardList} from "lucide-react";
 import {useMonthPicker} from "../../hooks/useMonthPicker";
 import MonthPicker from "../Shared/MonthPicker";
 import LockModal from "../Shared/LockModal";
 import UnlockModal from "../Shared/UnlockModal";
 import TaskModal from "../Shared/TaskModal";
 import {getSales,getPurchases,saveSplits,saveManualLine,lockPeriod,getAccounts,createTask} from "../../services/api";
-import {fmtMYR,fmtDateShort,MN} from "../../utils/fmt";
+import {fmtMYR,fmtDateShort} from "../../utils/fmt";
 import {showToast} from "../../utils/toast";
 import {useAuth} from "../../context/AuthContext";
+import {Button} from "../ui/button";
+import {Badge} from "../ui/badge";
+import {Card} from "../ui/card";
+import {PageHeader} from "../ui/page-header";
+import {Input} from "../ui/input";
+import {DateField} from "../ui/date-field";
+import {RemarkField} from "../ui/remark-field";
+import {FilterBar, FilterLabel} from "../ui/page-shell";
+import {FilterPill} from "../ui/filter-pill";
+import {Skeleton} from "../ui/skeleton";
+import {cn} from "../../lib/utils";
+import {DropdownPortal,ColumnMenu,HeaderMarks,monthKey} from "../Shared/ColumnFilter";
 
 
 const FETCH={sales:getSales,pur:getPurchases};
 
 function CatBadge({cat}){
-  if(cat==="PS")  return <span className="bdg bdg-ps">PS</span>;
-  if(cat==="LIC") return <span className="bdg bdg-lic">LIC</span>;
-  if(cat==="HW")  return <span className="bdg" style={{background:"#FFF3E0",color:"#E65100"}}>HW</span>;
-  if(cat==="AMS") return <span className="bdg" style={{background:"#E8F5E9",color:"#1B5E20"}}>AMS</span>;
-  if(cat==="TRN") return <span className="bdg" style={{background:"#FFFDE7",color:"#F57F17"}}>TRN</span>;
-  return <span className="bdg">{cat||"—"}</span>;
+  if(cat==="PS")  return <Badge variant="default">PS</Badge>;
+  if(cat==="LIC") return <Badge className="bg-[#EEEDFE] text-[#3C3489]">LIC</Badge>;
+  if(cat==="HW")  return <Badge variant="muted">HW</Badge>;
+  if(cat==="AMS") return <Badge variant="success">AMS</Badge>;
+  if(cat==="TRN") return <Badge variant="warning">TRN</Badge>;
+  return <Badge variant="muted">{cat||"—"}</Badge>;
 }
 
-function DropdownPortal({anchorRef,children,onClose}){
-  const [pos,setPos]=useState({top:0,left:0,width:200});
-  useEffect(()=>{
-    if(!anchorRef.current) return;
-    const rect=anchorRef.current.getBoundingClientRect();
-    setPos({top:rect.bottom+window.scrollY,left:rect.left+window.scrollX,width:Math.max(200,rect.width)});
-  },[anchorRef]);
-  useEffect(()=>{
-    const close=e=>{if(!anchorRef.current?.contains(e.target)) onClose();};
-    document.addEventListener("mousedown",close);
-    return()=>document.removeEventListener("mousedown",close);
-  },[anchorRef,onClose]);
-  return ReactDOM.createPortal(
-    <div style={{position:"absolute",top:pos.top,left:pos.left,zIndex:99999,
-        background:"#fff",border:"1px solid #e8e7e0",borderRadius:6,
-        boxShadow:"0 4px 20px rgba(0,0,0,.15)",minWidth:pos.width,
-        maxHeight:300,overflowY:"auto",padding:4}}
-      onMouseDown={e=>e.stopPropagation()}>
-      {children}
-    </div>,
-    document.body
-  );
-}
-
+// The invoice table uses `table-layout: fixed` with an explicit pixel width
+// (see sizeColumns in InvoiceTab) — that's what makes a header cell's width
+// actually stick. So a resize has to grow/shrink the TABLE by the same
+// amount as the column, otherwise the browser just redistributes the space.
 function startResize(e,thRef){
   e.stopPropagation();
+  e.preventDefault();
   const th=thRef.current;
   if(!th) return;
-  const startX=e.clientX,startW=th.offsetWidth;
-  const onMove=ev=>{th.style.width=Math.max(40,startW+ev.clientX-startX)+"px";};
+  const table=th.closest("table");
+  const startX=e.clientX,startW=th.offsetWidth,startTW=table?table.offsetWidth:0;
+  const onMove=ev=>{
+    const w=Math.max(40,startW+ev.clientX-startX);
+    th.style.width=w+"px";
+    th.style.minWidth=w+"px";
+    if(table) table.style.width=Math.max(startTW+(w-startW),table.parentElement.clientWidth)+"px";
+  };
   const onUp=()=>{
     document.removeEventListener("mousemove",onMove);
     document.removeEventListener("mouseup",onUp);
@@ -60,67 +59,34 @@ function startResize(e,thRef){
   document.addEventListener("mouseup",onUp);
 }
 
-function ColHeader({label,col,minWidth=90,align="left",
+// Column filter kinds (see Shared/ColumnFilter): price columns filter by a
+// min–max range, the Date column by month, every other column by value.
+const PRICE_COLS=["home_dr","home_cr","amount"];
+const colKind=col=>PRICE_COLS.includes(col)?"range":col==="trans_date"?"month":"text";
+
+function ColHeader({label,col,minWidth=90,align="left",freezeLeft,freezeEdge=false,
                     sortKey,sortDir,colFilter,openMenu,
                     onSort,onFilter,onMenu,getUnique}){
   const thRef=useRef(null);
   const active=colFilter[col];
   const isOpen=openMenu===col;
   const isSorted=sortKey===col;
-  const unique=getUnique(col);
+  const unique=isOpen?getUnique(col):[];
   return(
-    <th ref={thRef}
-      style={{width:minWidth,minWidth,position:"relative",userSelect:"none",textAlign:align,
-              padding:0,background:"#fafaf8",borderBottom:"1px solid #e8e7e0"}}>
-      <div style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",padding:"7px 8px"}}
+    <th ref={thRef} className={cn("relative select-none border-b border-border bg-card p-0", freezeLeft!=null&&"sticky z-30", freezeEdge&&FZ_EDGE)}
+      style={{width:minWidth,minWidth,textAlign:align,...(freezeLeft!=null?{left:freezeLeft}:{})}}>
+      <div className="flex cursor-pointer items-center gap-1 px-2.5 py-2.5"
         onMouseDown={e=>e.stopPropagation()}
         onClick={e=>{e.stopPropagation();onMenu(isOpen?null:col);}}>
-        <span style={{flex:1,fontSize:9,fontWeight:700,color:"#888780",
-                      textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap"}}>
+        <span className="flex-1 whitespace-nowrap text-[12.5px] font-bold text-muted-foreground">
           {label}
         </span>
-        {isSorted&&<span style={{color:"#185FA5",fontSize:10}}>{sortDir==="asc"?"↑":"↓"}</span>}
-        {active&&<span style={{color:"#185FA5",fontSize:8,lineHeight:1}}>●</span>}
-        <span style={{fontSize:10,color:isOpen?"#185FA5":"#ccc"}}>▾</span>
+        <HeaderMarks isSorted={isSorted} sortDir={sortDir} active={active} isOpen={isOpen}/>
       </div>
       {isOpen&&(
         <DropdownPortal anchorRef={thRef} onClose={()=>onMenu(null)}>
-          <div style={{padding:"4px 8px",fontSize:10,color:"#888780",fontWeight:700,letterSpacing:".08em"}}>SORT</div>
-          {["asc","desc"].map(dir=>(
-            <div key={dir}
-              onClick={()=>{onSort(col,dir);onMenu(null);}}
-              style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",
-                fontSize:11,cursor:"pointer",borderRadius:4,
-                background:isSorted&&sortDir===dir?"rgba(24,95,165,.08)":"transparent",
-                color:isSorted&&sortDir===dir?"#185FA5":"#333"}}>
-              {dir==="asc"?"↑":"↓"}&nbsp;{dir==="asc"?"A → Z / Low → High":"Z → A / High → Low"}
-            </div>
-          ))}
-          <div style={{margin:"4px 0",borderTop:"1px solid #f0f0ee"}}/>
-          <div style={{padding:"4px 8px",fontSize:10,color:"#888780",fontWeight:700,letterSpacing:".08em"}}>FILTER</div>
-          <div onClick={()=>{onFilter(col,null);onMenu(null);}}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",
-              fontSize:11,cursor:"pointer",borderRadius:4,
-              background:!active?"rgba(24,95,165,.08)":"transparent",
-              color:!active?"#185FA5":"#888780"}}>
-            {!active&&<span>✓</span>}&nbsp;All
-          </div>
-          {unique.length===0&&(
-            <div style={{padding:"6px 10px",fontSize:11,color:"#b4b2a9",fontStyle:"italic"}}>
-              No values found
-            </div>
-          )}
-          {unique.map(val=>(
-            <div key={val}
-              onClick={()=>{onFilter(col,val);onMenu(null);}}
-              style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",
-                fontSize:11,cursor:"pointer",borderRadius:4,
-                background:active===val?"rgba(24,95,165,.08)":"transparent",
-                color:active===val?"#185FA5":"#333",
-                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-              {active===val&&<span>✓</span>}&nbsp;{String(val)}
-            </div>
-          ))}
+          <ColumnMenu kind={colKind(col)} isSorted={isSorted} sortDir={sortDir} active={active} values={unique}
+            onSort={dir=>onSort(col,dir)} onFilter={v=>onFilter(col,v)} onClose={()=>onMenu(null)}/>
         </DropdownPortal>
       )}
       <span className="resize-handle" onMouseDown={e=>startResize(e,thRef)}/>
@@ -131,10 +97,8 @@ function ColHeader({label,col,minWidth=90,align="left",
 function StaticTh({label,minWidth=90,align="left"}){
   const thRef=useRef(null);
   return(
-    <th ref={thRef} style={{width:minWidth,textAlign:align,padding:"7px 8px",
-        fontSize:9,fontWeight:700,color:"#888780",textTransform:"uppercase",
-        background:"#fafaf8",borderBottom:"1px solid #e8e7e0",
-        whiteSpace:"nowrap",position:"relative"}}>
+    <th ref={thRef} className="relative whitespace-nowrap border-b border-border bg-card px-2.5 py-2.5 text-[12.5px] font-bold text-muted-foreground"
+      style={{width:minWidth,textAlign:align}}>
       {label}
       <span className="resize-handle" onMouseDown={e=>startResize(e,thRef)}/>
     </th>
@@ -152,6 +116,22 @@ const CAT_OPTIONS = (
   </>
 );
 
+// Sticky first column (Date) keeps row context visible while the wide
+// invoice table scrolls horizontally. Each row background state below
+// needs its own *opaque* approximation on the sticky cell (the row's own
+// translucent tint, e.g. bg-destructive/10 or bg-accent/40, would let the
+// scrolling columns underneath bleed through if reused as-is).
+// Right-edge shadow on the last frozen column (Desc.), marking where the
+// horizontally scrolling columns start.
+const FZ_EDGE = "shadow-[6px_0_8px_-6px_rgba(0,0,0,0.18)]";
+// Opaque stand-ins for the translucent split-row tints, for frozen cells.
+const SPLIT_BG = "bg-[color-mix(in_srgb,hsl(var(--accent))_40%,hsl(var(--card)))]";
+const SPLIT_LOCKED_BG = "bg-red-50 dark:bg-red-950";
+
+const catSelCls = "h-6 rounded-md border border-primary/40 bg-card px-1.5 text-[12px]";
+const newLineLblCls = "text-[10px] font-bold uppercase tracking-wide text-success/80";
+const newLineInpCls = "h-6 rounded-md border border-success/40 bg-card px-1.5 text-[12px]";
+
 const CAT_OPTIONS_NO_BLANK = (
   <>
     <option value="PS">PS</option>
@@ -162,7 +142,7 @@ const CAT_OPTIONS_NO_BLANK = (
   </>
 );
 
-export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
+export default function InvoiceTab({tab,entity="QM"}){
   const {user}=useAuth();
   const now=new Date();
   const mp=useMonthPicker(now.getFullYear(),now.getMonth(),now.getFullYear(),now.getMonth());
@@ -196,7 +176,6 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           })
           .catch(()=>{});
   },[newLineOpen,entity,tab]);
-  useEffect(()=>{setInvoices([]);},[entity]);
 
   const toggleExpand=sk=>setExpanded(p=>({...p,[sk]:!p[sk]}));
   const updateRow=(sk,key,val)=>setRowState(p=>({...p,[sk]:{...p[sk],[key]:val}}));
@@ -233,6 +212,9 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
     finally{setLoading(false);}
   },[tab,entity,mp.fromStr,mp.toStr]);
 
+  // Run on first open and whenever the entity changes.
+  useEffect(()=>{setInvoices([]);run();},[entity,tab]);
+
   const isLocked=d=>lockedPeriods.includes(d.slice(0,7));
 
   let totNet=0,totPS=0,totLIC=0,totHW=0,totAMS=0,totTRN=0,totUnc=0,cntUnc=0;
@@ -260,7 +242,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const handleSort=(key,dir)=>{setSortKey(key);setSortDir(dir);};
   const handleFilter=(col,val)=>setColFilter(p=>{
     const n={...p};
-    if(val===null)delete n[col];else n[col]=val;
+    if(val===null||(Array.isArray(val)&&!val.length))delete n[col];else n[col]=val;
     return n;
   });
 
@@ -279,20 +261,35 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
           :[inv.category]
       ).filter(v=>v!=null&&v!==""))].sort();
     }
+    if(col==="trans_date"){
+      return[...new Set(invoices.map(inv=>monthKey(inv.trans_date)).filter(Boolean))].sort();
+    }
     const field=COL_FIELD[col]||col;
+    if(PRICE_COLS.includes(col)){
+      return invoices.map(inv=>Number(inv[field])||0).sort((a,b)=>a-b);
+    }
     return[...new Set(invoices.map(inv=>inv[field]).filter(v=>v!=null&&v!==""))].sort();
   };
 
   const colFiltered=invoices.filter(inv=>
     Object.entries(colFilter).every(([col,val])=>{
       if(!val)return true;
+      const field=COL_FIELD[col]||col;
+      if(PRICE_COLS.includes(col)){
+        const v=Number(inv[field])||0;
+        if(val.min!==""&&val.min!=null&&v<Number(val.min))return false;
+        if(val.max!==""&&val.max!=null&&v>Number(val.max))return false;
+        return true;
+      }
+      if(!val.length)return true;
       if(col==="category"){
         if(inv.splits&&inv.splits.length)
-          return inv.splits.some(s=>s.category===val);
-        return (inv.category||"")===val;
+          return inv.splits.some(s=>val.includes(s.category));
+        return val.includes(inv.category||"");
       }
-      const field=COL_FIELD[col]||col;
-      return String(inv[field]||"").toLowerCase()===val.toLowerCase();
+      if(col==="trans_date")return val.includes(monthKey(inv.trans_date));
+      const s=String(inv[field]??"").toLowerCase();
+      return val.some(x=>String(x).toLowerCase()===s);
     })
   );
   const searched=search
@@ -443,136 +440,167 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
   const noun=isSales?"Sales":"Purchases";
   const periodLbl=mp.fromLabel===mp.toLabel?mp.fromLabel:mp.fromLabel+"–"+mp.toLabel;
   const colSpanFull=isSales?18:19;
-  const tableMinWidth=isSales?1568 : 1968;
+
+  // Columns Date to Desc. stay frozen while the rest scroll sideways. Their
+  // left offsets are measured from the header cells (columns are resizable)
+  // and re-measured whenever a frozen header cell changes width.
+  const FROZEN=isSales?7:8;
+  const headRowRef=useRef(null);
+
+  // Column sizing: the first time invoices arrive, lock each column to the
+  // width it naturally takes, and give the table an explicit total width.
+  // With table-layout:fixed that makes the widths authoritative, so the
+  // resize handles can widen AND narrow columns (text then ends in "…").
+  // Done once per tab, so the user's own resizing survives re-running.
+  const sizedRef=useRef(false);
+  useLayoutEffect(()=>{
+    const row=headRowRef.current;
+    if(sizedRef.current||!row||!invoices.length) return;
+    const table=row.closest("table");
+    const ths=[...row.children];
+    const widths=ths.map(th=>th.offsetWidth);
+    ths.forEach((th,i)=>{
+      if(i===ths.length-1) return; // trailing filler column takes any leftover space
+      th.style.width=widths[i]+"px";
+      th.style.minWidth=widths[i]+"px";
+    });
+    const sum=widths.slice(0,-1).reduce((a,b)=>a+b,0);
+    table.style.width=Math.max(sum,table.parentElement.clientWidth)+"px";
+    sizedRef.current=true;
+  },[invoices.length]);
+  const [lefts,setLefts]=useState([]);
+  useLayoutEffect(()=>{
+    const row=headRowRef.current; if(!row) return;
+    const ths=[...row.children].slice(0,FROZEN);
+    // Offsets = running sum of the preceding frozen columns' widths. (Not
+    // th.offsetLeft: on a sticky cell that already includes the sticky
+    // shift, so after a column is narrowed the stale, larger offsets would
+    // keep pinning the following columns in place and leave a gap.)
+    const measure=()=>{
+      let x=0;
+      const next=ths.map(th=>{const l=x;x+=th.getBoundingClientRect().width;return Math.round(l);});
+      setLefts(p=>p.length===next.length&&p.every((v,i)=>v===next[i])?p:next);
+    };
+    measure();
+    const ro=new ResizeObserver(measure);
+    ths.forEach(th=>ro.observe(th));
+    return()=>ro.disconnect();
+  },[FROZEN]);
+  const fh=i=>({freezeLeft:lefts[i]??0,freezeEdge:i===FROZEN-1});
+  const fz=(i,bg)=>({className:cn("sticky z-10",bg,i===FROZEN-1&&FZ_EDGE),style:{left:lefts[i]??0}});
 
   return(
-    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",minHeight:0}}>
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Page-level scroll (header + filters + lock-bar + KPIs + table all
+          scroll together), matching the finalized PnL.jsx/MFRS.jsx pattern —
+          replaces the old fixed-toolbar-with-independent-scroll layout. */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="space-y-5 p-4 sm:p-6">
+          <PageHeader
+            eyebrow="Adjustment"
+            title={noun}
+            subtitle={`${entity} · ${periodLbl}`}
+            actions={
+              <>
+                <Button variant="outline" size="sm" onClick={exportCSV}>
+                  <Download className="h-3.5 w-3.5"/> Export CSV
+                </Button>
+                {/* Kept away from Run Report and styled as a secondary action:
+                    locking is irreversible, so it shouldn't carry the same
+                    visual weight or sit where a quick click might land. */}
+                <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:border-destructive/50 hover:text-destructive" onClick={()=>setLockModal(true)}>
+                  <Lock className="h-3.5 w-3.5"/> Lock period
+                </Button>
+              </>
+            }
+          />
 
-      <div className="pg-hdr">
-        <div className="pg-title">
-          {isSales
-            ?<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#185FA5" strokeWidth="1.5"><rect x="1" y="9" width="14" height="5" rx="1.5"/><path d="M8 1v8M5.5 6l2.5 3 2.5-3"/></svg>
-            :<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#185FA5" strokeWidth="1.5"><rect x="1" y="9" width="14" height="5" rx="1.5"/><path d="M8 7V1M5.5 4l2.5-3 2.5 3"/></svg>}
-          {noun}&nbsp;<span className="pg-badge">{entity} · {periodLbl}</span>
-        </div>
-        <div className="pg-actions">
-          <button className="pg-btn" onClick={exportCSV}>Export CSV</button>
-        </div>
-      </div>
-
-      <div className="filter">
-        <span className="f-lbl">Entity</span>
-        <select className="f-sel" value={entity} onChange={e=>{setEntity(e.target.value);setInvoices([]);}}>
-          {entities.map(e=><option key={e.entity_code} value={e.entity_code}>{e.entity_code}</option>)}
-        </select>
-        <div className="f-div"/>
-        <span className="f-lbl">From</span>
-        <MonthPicker label={mp.fromLabel} state={mp.s} side="from" onSelect={mp.sel}/>
-        <span className="f-lbl">To</span>
-        <MonthPicker label={mp.toLabel} state={mp.s} side="to" onSelect={mp.sel}/>
-        <div className="f-div"/>
-        {["tm","lm","ty","ly"].map(p=>(
-          <button key={p} className={"f-pre"+(preset===p?" on":"")}
-            onClick={()=>{setPreset(p);mp.preset(p);}}>
-            {p==="tm"?"This month":p==="lm"?"Last month":p==="ty"?"This year":"Last year"}
-          </button>
-        ))}
-        <button className="run" onClick={run} disabled={loading}>
-          {loading?"Loading…":"Run Report"}
-        </button>
-      </div>
-
-      <div className="lock-bar">
-        <span className="lock-bar-label">Period lock</span>
-        <div className="lk-pills">
-          {lockedPeriods
-            .filter(ym=>ym>=mp.fromStr.slice(0,7)&&ym<=mp.toStr.slice(0,7))
-            .map(ym=>(
-              <span key={ym} className="lk-pill locked">
-                🔒 {MN[parseInt(ym.split("-")[1])-1]} {ym.split("-")[0]} — locked
-              </span>
+          <FilterBar>
+            <FilterLabel>Period</FilterLabel>
+            <MonthPicker label={mp.fromLabel} state={mp.s} side="from" onSelect={mp.sel}/>
+            <span>–</span>
+            <MonthPicker label={mp.toLabel} state={mp.s} side="to" onSelect={mp.sel}/>
+            {["tm","lm","ty","ly"].map(p=>(
+              <FilterPill key={p} active={preset===p} onClick={()=>{setPreset(p);mp.preset(p);}}>
+                {p==="tm"?"This month":p==="lm"?"Last month":p==="ty"?"This year":"Last year"}
+              </FilterPill>
             ))}
-        </div>
-        <button className="btn-lock-period" onClick={()=>setLockModal(true)}>
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="7" width="10" height="8" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
-          Lock period
-        </button>
-      </div>
+            <Button className="ml-auto" size="lg" onClick={run} disabled={loading}>
+              {loading?"Loading…":"Run Report"}
+            </Button>
+          </FilterBar>
 
-      {lockedPeriods.some(ym=>ym>=mp.fromStr.slice(0,7)&&ym<=mp.toStr.slice(0,7))&&(
-        <div className="locked-banner">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#E24B4A" strokeWidth="1.5"><rect x="3" y="7" width="10" height="8" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>
-          <strong>Period is locked.</strong>&nbsp;All invoices are read-only. Submit an unlock request to edit.
-        </div>
-      )}
+          {lockedPeriods.some(ym=>ym>=mp.fromStr.slice(0,7)&&ym<=mp.toStr.slice(0,7))&&(
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-[13px] text-destructive">
+              <Lock className="h-3.5 w-3.5"/>
+              <strong>Period is locked.</strong>&nbsp;All invoices are read-only. Submit an unlock request to edit.
+            </div>
+          )}
 
-      <div style={{padding:"14px 18px",flexShrink:0,background:"#fff",borderBottom:"1px solid #e8e7e0"}}>
-        <div className="kpi-row" style={{marginBottom:0}}>
-          <div className="kpi">
-            <div className="kpi-lbl">Total {noun}</div>
-            <div className="kpi-val b">{fmtMYR(Math.abs(totNet))}</div>
-            <div className="kpi-sub">{invoices.length} invoices · {periodLbl}</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Professional Services</div>
-            <div className="kpi-val g">{fmtMYR(Math.abs(totPS))}</div>
-            <div className="kpi-sub">{totNet?((totPS/totNet)*100).toFixed(1)+"% of total":""}</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Licence</div>
-            <div className="kpi-val a">{fmtMYR(Math.abs(totLIC))}</div>
-            <div className="kpi-sub">{totNet?((totLIC/totNet)*100).toFixed(1)+"% of total":""}</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Hardware</div>
-            <div className="kpi-val" style={{color:"#888780"}}>{fmtMYR(Math.abs(totHW))}</div>
-            <div className="kpi-sub">{totNet?((totHW/totNet)*100).toFixed(1)+"% of total":""}</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">AMS</div>
-            <div className="kpi-val" style={{color:"#1B5E20"}}>{fmtMYR(Math.abs(totAMS))}</div>
-            <div className="kpi-sub">{totNet?((totAMS/totNet)*100).toFixed(1)+"% of total":""}</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Training</div>
-            <div className="kpi-val" style={{color:"#F57F17"}}>{fmtMYR(Math.abs(totTRN))}</div>
-            <div className="kpi-sub">{totNet?((totTRN/totNet)*100).toFixed(1)+"% of total":""}</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Uncategorised</div>
-            <div className="kpi-val" style={{color:"#E24B4A"}}>{fmtMYR(Math.abs(totUnc))}</div>
-            <div className="kpi-sub">{cntUnc} invoices</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="content">
-        <div style={{background:"#FFF8E6",border:"1px solid #F5C97A",borderRadius:8,
-            padding:"8px 14px",fontSize:11,color:"#7A5500",marginBottom:12,
-            display:"flex",alignItems:"center",gap:8}}>
-          <strong>MFRS dates</strong> — enter Start Date and End Date on each line to enable automatic recognition.
-        </div>
-
-        <div className="card">
-          <div className="card-hdr">
-            <div className="card-title">{noun} invoices · {periodLbl} · {entity}</div>
-            <input className="search"
-              placeholder={`Search ${isSales?"customer":"supplier"}, invoice…`}
-              value={search} onChange={e=>setSearch(e.target.value)}/>
+          {/* KPI grid — plain white Cards */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 min-[1280px]:grid-cols-7 [&_.text-lg]:text-base">
+            <Card className="min-w-0 px-3.5 py-2.5">
+              <div className="truncate text-xs text-muted-foreground">Total {noun}</div>
+              <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-primary">{fmtMYR(Math.abs(totNet))}</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">{invoices.length} invoices · {periodLbl}</div>
+            </Card>
+            <Card className="min-w-0 px-3.5 py-2.5">
+              <div className="truncate text-xs text-muted-foreground">Professional Services</div>
+              <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-success">{fmtMYR(Math.abs(totPS))}</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">{totNet?((totPS/totNet)*100).toFixed(1)+"% of total":""}</div>
+            </Card>
+            <Card className="min-w-0 px-3.5 py-2.5">
+              <div className="truncate text-xs text-muted-foreground">Licence</div>
+              <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-warning">{fmtMYR(Math.abs(totLIC))}</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">{totNet?((totLIC/totNet)*100).toFixed(1)+"% of total":""}</div>
+            </Card>
+            <Card className="min-w-0 px-3.5 py-2.5">
+              <div className="truncate text-xs text-muted-foreground">Hardware</div>
+              <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-muted-foreground">{fmtMYR(Math.abs(totHW))}</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">{totNet?((totHW/totNet)*100).toFixed(1)+"% of total":""}</div>
+            </Card>
+            <Card className="min-w-0 px-3.5 py-2.5">
+              <div className="truncate text-xs text-muted-foreground">AMS</div>
+              <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-[#1B5E20]">{fmtMYR(Math.abs(totAMS))}</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">{totNet?((totAMS/totNet)*100).toFixed(1)+"% of total":""}</div>
+            </Card>
+            <Card className="min-w-0 px-3.5 py-2.5">
+              <div className="truncate text-xs text-muted-foreground">Training</div>
+              <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-[#F57F17]">{fmtMYR(Math.abs(totTRN))}</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">{totNet?((totTRN/totNet)*100).toFixed(1)+"% of total":""}</div>
+            </Card>
+            <Card className="min-w-0 px-3.5 py-2.5">
+              <div className="truncate text-xs text-muted-foreground">Uncategorised</div>
+              <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-destructive">{fmtMYR(Math.abs(totUnc))}</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">{cntUnc} invoices</div>
+            </Card>
           </div>
 
-          <div style={{overflowX:"auto",overflowY:"auto",width:"100%",maxHeight:"calc(100vh - 400px)"}}>
-            <table style={{tableLayout:"fixed",borderCollapse:"collapse",minWidth:tableMinWidth}}>
-              <thead style={{position:"sticky",top:0,zIndex:1}}>
-                <tr>
-                  <ColHeader label="Date"         col="trans_date"  minWidth={70}  {...chProps}/>
-                  <ColHeader label="Acc. No."     col="acc_no"      minWidth={90}  {...chProps}/>
-                  <ColHeader label="Acc. Desc."   col="acc_desc"    minWidth={130} {...chProps}/>
-                  <ColHeader label="Debtor Desc." col="de_acc_desc" minWidth={150} {...chProps}/>
-                  <ColHeader label="Project Code" col="proj_no"     minWidth={110} {...chProps}/>
-                  <ColHeader label="Ref. 1"       col="ref_no1"     minWidth={110} {...chProps}/>
-                  {!isSales&&<ColHeader label="Ref. 2" col="ref_no2" minWidth={100} {...chProps}/>}
-                  <ColHeader label="Desc."        col="description" minWidth={160} {...chProps}/>
+          <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2 text-[12px] text-warning">
+            <strong>MFRS dates</strong> — enter Start Date and End Date on each line to enable automatic recognition.
+          </div>
+
+          <Card className="overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-[18px] pb-2.5 pt-3.5">
+              <h3 className="text-base font-semibold">{noun} invoices · {periodLbl} · {entity}</h3>
+              <Input className="w-48"
+                placeholder={`Search ${isSales?"customer":"supplier"}, invoice…`}
+                value={search} onChange={e=>setSearch(e.target.value)}/>
+            </div>
+
+            {/* Own scroll area: the header row stays visible while invoice lines scroll. */}
+            <div className="max-h-[calc(100vh-230px)] min-h-[360px] w-full overflow-auto">
+              <table className="table-fixed border-collapse text-[13px] [&_td]:overflow-hidden [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_td]:px-2.5 [&_td]:py-2 [&_td]:align-middle">
+              <thead className="sticky top-0 z-30">
+                <tr ref={headRowRef}>
+                  <ColHeader label="Date"         col="trans_date"  minWidth={100}  {...fh(0)} {...chProps}/>
+                  <ColHeader label="Acc. No."     col="acc_no"      minWidth={90}  {...fh(1)} {...chProps}/>
+                  <ColHeader label="Acc. Desc."   col="acc_desc"    minWidth={130} {...fh(2)} {...chProps}/>
+                  <ColHeader label="Debtor Desc." col="de_acc_desc" minWidth={150} {...fh(3)} {...chProps}/>
+                  <ColHeader label="Project Code" col="proj_no"     minWidth={110} {...fh(4)} {...chProps}/>
+                  <ColHeader label="Ref. 1"       col="ref_no1"     minWidth={110} {...fh(5)} {...chProps}/>
+                  {!isSales&&<ColHeader label="Ref. 2" col="ref_no2" minWidth={100} {...fh(6)} {...chProps}/>}
+                  <ColHeader label="Desc."        col="description" minWidth={160} {...fh(FROZEN-1)} {...chProps}/>
                   <ColHeader label="Home DR"      col="home_dr"     minWidth={100} align="right" {...chProps}/>
                   <ColHeader label="Home CR"      col="home_cr"     minWidth={100} align="right" {...chProps}/>
                   <ColHeader label="Amount"       col="amount"      minWidth={100} align="right" {...chProps}/>
@@ -583,7 +611,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   <StaticTh label="Days"       minWidth={60} align="right"/>
                   <StaticTh label="Remark"     minWidth={120}/>
                   <StaticTh label="Action"     minWidth={120}/>
-                  <th style={{width:"100%",background:"#fafaf8",borderBottom:"1px solid #e8e7e0"}}/>
+                  <th className="border-b border-border bg-card"/>
                 </tr>
               </thead>
               <tbody>
@@ -612,12 +640,12 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   let typeBdg;
                   const savedCat=inv.category||getRow(inv.source_key,"cat","");
                   if(isMultiSplit){
-                    typeBdg=<span className="bdg bdg-split" style={{cursor:"pointer"}}
+                    typeBdg=<Badge variant="muted" className="cursor-pointer"
                       onClick={()=>toggleExpand(inv.source_key)}>
                       Split {isEx?"▲":"▼"}
-                    </span>;
+                    </Badge>;
                   }else if(inEdit){
-                    typeBdg=<select className="cat-sel" value={inEdit.cat}
+                    typeBdg=<select className={catSelCls} value={inEdit.cat}
                       onChange={e=>updateEdit(inv.source_key,"cat",e.target.value)}>
                       {CAT_OPTIONS}
                     </select>;
@@ -627,89 +655,90 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                     typeBdg=<CatBadge cat={savedCat}/>;
                   }else{
                     typeBdg=reallyLocked
-                      ?<span className="bdg bdg-none">— Assign</span>
-                      :<select className="cat-sel" value={getRow(inv.source_key,"cat","")}
+                      ?<Badge variant="muted">— Assign</Badge>
+                      :<select className={catSelCls} value={getRow(inv.source_key,"cat","")}
                           onChange={e=>updateRow(inv.source_key,"cat",e.target.value)}>
                           {CAT_OPTIONS}
                         </select>;
                   }
 
+                  // Opaque background for the frozen cells, matching the row state.
+                  const fzBg=reallyLocked?"bg-red-50 dark:bg-red-950":inEdit?SPLIT_BG:"bg-card";
+                  const FZ=(i,cls)=>{const z=fz(i,fzBg);return{className:cn(z.className,cls),style:z.style};};
                   return(
                     <React.Fragment key={inv.source_key}>
-                      <tr className={"row-hover"+(reallyLocked?" row-locked":"")+(inEdit?" row-split":"")}>
-                        <td className="muted">{fmtDateShort(inv.trans_date)}</td>
-                        <td className="mono muted" style={{fontSize:11}}>{inv.acc_no||"—"}</td>
-                        <td className="muted" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      <tr className={cn("border-b border-border/60 hover:bg-muted/40",
+                        reallyLocked&&"bg-red-50 dark:bg-red-950",inEdit&&SPLIT_BG)}>
+                        <td {...FZ(0,"text-muted-foreground")}>
+                          {fmtDateShort(inv.trans_date)}
+                        </td>
+                        <td {...FZ(1,"font-mono text-[11px] text-muted-foreground")}>{inv.acc_no||"—"}</td>
+                        <td {...FZ(2,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")}>
                           {inv.acc_desc||"—"}
                         </td>
-                        <td className="muted" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        <td {...FZ(3,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")}>
                           {inv.de_acc_desc||"—"}
                         </td>
-                        <td className="mono" style={{fontSize:11}}>{inv.proj_no||"—"}</td>
-                        <td className="mono">
+                        <td {...FZ(4,"font-mono text-[11px]")}>{inv.proj_no||"—"}</td>
+                        <td {...FZ(5,"font-mono")}>
                           {reallyLocked
                             ?<>🔒 {inv.ref_no1}</>
-                            :<span style={{color:"#185FA5"}}>{inv.ref_no1||"—"}</span>}
+                            :<span className="text-primary">{inv.ref_no1||"—"}</span>}
                         </td>
-                        {!isSales&&<td className="mono muted" style={{fontSize:11}}>{inv.ref_no2||"—"}</td>}
-                        <td className="muted" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        {!isSales&&<td {...FZ(6,"font-mono text-[11px] text-muted-foreground")}>{inv.ref_no2||"—"}</td>}
+                        <td {...FZ(FROZEN-1,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")}>
                           {inv.description||"—"}
                         </td>
-                        <td className={"tr mono"+(hasSplit?" strike muted":"")}>{fmtMYR(hdr)}</td>
-                        <td className="tr mono muted">{fmtMYR(hcr)}</td>
-                        <td className="tr mono">{fmtMYR(amt)}</td>
+                        <td className={cn("text-right font-mono",hasSplit&&"line-through text-muted-foreground/70")}>{fmtMYR(hdr)}</td>
+                        <td className="text-right font-mono text-muted-foreground">{fmtMYR(hcr)}</td>
+                        <td className="text-right font-mono">{fmtMYR(amt)}</td>
                         <td>{typeBdg}</td>
 
                         {/* End User */}
                         <td>
                           {inEdit
-                            ?<input type="text" className="f-date"
+                            ?<Input type="text" className="h-6 border-primary/40 px-1.5 text-[12px]"
                                 value={inEdit.eu} placeholder="End user"
                                 onChange={e=>updateEdit(inv.source_key,"eu",e.target.value)}
-                                style={{width:90,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                                style={{width:90}}/>
                             :singleSplit
-                              ?<span style={{fontSize:11,color:"#5f5e5a"}}>{singleSplit.end_user||"—"}</span>
+                              ?<span className="text-[12px] text-foreground/80">{singleSplit.end_user||"—"}</span>
                               :hasSplit
-                                ?<span className="muted">—</span>
-                                :<input type="text" className="f-date"
+                                ?<span className="text-muted-foreground">—</span>
+                                :<Input type="text" className="h-6 px-1.5 text-[12px]"
                                     value={getRow(inv.source_key,"eu")} readOnly={reallyLocked}
                                     placeholder="End user"
                                     onChange={e=>updateRow(inv.source_key,"eu",e.target.value)}
-                                    style={{width:90,fontSize:11,padding:"3px 5px"}}/>}
+                                    style={{width:90}}/>}
                         </td>
 
                         {/* Start Date */}
                         <td>
                           {inEdit
-                            ?<input type="date" className="f-date" value={inEdit.sd}
-                                onChange={e=>updateEdit(inv.source_key,"sd",e.target.value)}
-                                style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                            ?<DateField className="h-6" tone="primary" value={inEdit.sd}
+                                onChange={v=>updateEdit(inv.source_key,"sd",v)}/>
                             :singleSplit
-                              ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.start_date)||"—"}</span>
-                              :<input type="date" className="f-date"
+                              ?<span className="text-[12px] text-foreground/80">{singleSplit.start_date?fmtDateShort(singleSplit.start_date):"—"}</span>
+                              :<DateField className="h-6" tone={!hasSplit?"primary":undefined}
                                 value={getRow(inv.source_key,"sd")} readOnly={reallyLocked||isMultiSplit}
-                                onChange={e=>updateRow(inv.source_key,"sd",e.target.value)}
-                                style={{width:96,fontSize:11,padding:"3px 5px",
-                                        borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
+                                onChange={v=>updateRow(inv.source_key,"sd",v)}/>}
                         </td>
 
                         {/* End Date */}
                         <td>
                           {inEdit
-                            ?<input type="date" className="f-date" value={inEdit.ed}
-                                onChange={e=>updateEdit(inv.source_key,"ed",e.target.value)}
-                                style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                            ?<DateField className="h-6" tone="primary" value={inEdit.ed} copyFrom={inEdit.sd} pasteOnly={inEdit.sd}
+                                onChange={v=>updateEdit(inv.source_key,"ed",v)}/>
                             :singleSplit
-                              ?<span style={{fontSize:11,color:"#5f5e5a"}}>{fmtDateShort(singleSplit.end_date)||"—"}</span>
-                              :<input type="date" className="f-date"
+                              ?<span className="text-[12px] text-foreground/80">{singleSplit.end_date?fmtDateShort(singleSplit.end_date):"—"}</span>
+                              :<DateField className="h-6" tone={!hasSplit?"primary":undefined}
                                 value={getRow(inv.source_key,"ed")} readOnly={reallyLocked||isMultiSplit}
-                                onChange={e=>updateRow(inv.source_key,"ed",e.target.value)}
-                                style={{width:96,fontSize:11,padding:"3px 5px",
-                                        borderColor:hasSplit?"#e8e7e0":"#85B7EB"}}/>}
+                                copyFrom={getRow(inv.source_key,"sd")} pasteOnly={getRow(inv.source_key,"sd")}
+                                onChange={v=>updateRow(inv.source_key,"ed",v)}/>}
                         </td>
 
                         {/* Days */}
-                        <td className="tr mono muted">
+                        <td className="text-right font-mono text-muted-foreground">
                           {inEdit
                             ?(()=>{const sd=inEdit.sd,ed=inEdit.ed;
                               return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";})()
@@ -722,24 +751,21 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         {/* Remark */}
                         <td>
                           {inEdit
-                            ?<input type="text" className="f-date" value={inEdit.rm||""} placeholder="Remark…"
-                                onChange={e=>updateEdit(inv.source_key,"rm",e.target.value)}
-                                style={{width:110,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                            ?<RemarkField tone="primary" value={inEdit.rm||""} context={`${inv.ref_no1||"Invoice"} · ${inv.acc_desc||""}`}
+                                onChange={v=>updateEdit(inv.source_key,"rm",v)}/>
                             :singleSplit
-                              ?<span style={{fontSize:11,color:"#888780"}}>{singleSplit.remark||"—"}</span>
+                              ?<span className="text-[12px] text-muted-foreground">{singleSplit.remark||"—"}</span>
                               :hasSplit
-                                ?<span className="muted">—</span>
-                                :<input type="text" className="f-date"
-                                    value={getRow(inv.source_key,"rm")} readOnly={reallyLocked}
-                                    placeholder="Remark…"
-                                    onChange={e=>updateRow(inv.source_key,"rm",e.target.value)}
-                                    style={{width:110,fontSize:11,padding:"3px 5px"}}/>}
+                                ?<span className="text-muted-foreground">—</span>
+                                :<RemarkField value={getRow(inv.source_key,"rm")} readOnly={reallyLocked} context={`${inv.ref_no1||"Invoice"} · ${inv.acc_desc||""}`}
+                                    onChange={v=>updateRow(inv.source_key,"rm",v)}/>}
                         </td>
 
                         {/* Action */}
-                        <td style={{whiteSpace:"nowrap"}}>
+                        <td className="whitespace-nowrap ![text-overflow:clip]">
                           {reallyLocked
-                            ?<button className="btn-unlock-req"
+                            ?<Button variant="outline" size="sm"
+                                className="h-6 border-destructive/40 px-2 text-[11px] text-destructive hover:bg-destructive/10"
                                 onClick={()=>setUnlockModal({
                                   open:true,
                                   invNo:inv.ref_no1||"#"+inv.source_key,
@@ -747,18 +773,18 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                                   journalType:tab==="sales"?"SALES":"PURCHASE"
                                 })}>
                                 🔓 Request unlock
-                              </button>
+                              </Button>
                             :inEdit
-                              ?<span style={{display:"flex",gap:4}}>
-                                  <button className="btn-save" onClick={()=>saveEdit(inv.source_key,amt)}>Update</button>
-                                  <button className="btn-del" onClick={()=>cancelEdit(inv.source_key)}>✕</button>
+                              ?<span className="flex gap-1">
+                                  <Button size="sm" className="h-6 px-2 text-[11px]" onClick={()=>saveEdit(inv.source_key,amt)}>Update</Button>
+                                  <Button variant="outline" size="sm" className="h-6 border-destructive/40 px-2 text-[11px] text-destructive" onClick={()=>cancelEdit(inv.source_key)}>✕</Button>
                                 </span>
                               :singleSplit
-                                ?<button className="btn-split" onClick={()=>startEdit(inv.source_key,singleSplit)}>✎ Edit</button>
+                                ?<Button variant="outline" size="sm" className="h-6 border-primary/40 px-2 text-[11px] text-primary" onClick={()=>startEdit(inv.source_key,singleSplit)}>✎ Edit</Button>
                                 :!hasSplit&&!inDraft
-                                  ?<span style={{display:"flex",gap:4}}>
-                                      <button className="btn-save" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</button>
-                                      <button className="btn-split" onClick={()=>openSplit(inv.source_key)}>＋ Split</button>
+                                  ?<span className="flex gap-1">
+                                      <Button size="sm" className="h-6 px-2 text-[11px]" onClick={()=>saveNoSplit(inv.source_key,amt)}>Save</Button>
+                                      <Button variant="outline" size="sm" className="h-6 border-primary/40 px-2 text-[11px] text-primary" onClick={()=>openSplit(inv.source_key)}>＋ Split</Button>
                                     </span>
                                   :<span/>}
                         </td>
@@ -767,43 +793,49 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
 
                       {/* ── Existing multi-split rows ── */}
                       {isMultiSplit&&isEx&&inv.splits.map((line,li)=>(
-                        <tr key={"s"+li} className={"row-split"+(reallyLocked?" row-split-locked":"")}>
-                          <td colSpan={isSales?5:6}/>
-                          <td colSpan={2}>
-                            <div style={{display:"flex",alignItems:"center",gap:6,paddingLeft:12}}>
-                              <div style={{width:2,height:34,background:reallyLocked?"#F09595":"#85B7EB",
-                                  flexShrink:0,marginRight:6,borderRadius:1}}/>
-                              <div>
-                                <CatBadge cat={line.category}/>
-                                <div style={{fontSize:9,color:reallyLocked?"#c0392b":"#888780",marginTop:3}}>
+                        <tr key={"s"+li} className={cn("border-b border-border/40",reallyLocked?SPLIT_LOCKED_BG:SPLIT_BG)}>
+                          {/* One cell per header column so every value sits under
+                              the same column as the invoice row above it. */}
+                          <td colSpan={isSales?6:7} {...fz(0,reallyLocked?SPLIT_LOCKED_BG:SPLIT_BG)}/>
+                          {/* Desc. */}
+                          <td {...fz(FROZEN-1,reallyLocked?SPLIT_LOCKED_BG:SPLIT_BG)}>
+                            <div className="flex items-center gap-2 pl-1">
+                              <div className={cn("h-[30px] w-0.5 shrink-0 rounded-sm",reallyLocked?"bg-destructive/50":"bg-primary/40")}/>
+                              <div className="leading-tight">
+                                <div className="text-[12px] font-semibold text-foreground">Split {li+1} of {inv.splits.length}</div>
+                                <div className={cn("text-[10.5px]",reallyLocked?"text-destructive":"text-muted-foreground")}>
                                   {reallyLocked?"🔒 Locked":"MFRS recognition period"}
                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td/>
-                          <td className="tr mono" style={{color:line.category==="LIC"?"#3C3489":"#0C447C"}}>
+                          <td/>{/* Home DR */}
+                          <td/>{/* Home CR */}
+                          {/* Amount */}
+                          <td className={cn("text-right font-mono",line.category==="LIC"?"text-[#3C3489]":"text-[#0C447C]")}>
                             {fmtMYR(Number(line.net_amount))}
                           </td>
                           <td><CatBadge cat={line.category}/></td>
-                          <td><input type="date" className="f-date" defaultValue={line.start_date||""} readOnly={reallyLocked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
-                          <td><input type="date" className="f-date" defaultValue={line.end_date||""} readOnly={reallyLocked} style={{width:96,fontSize:11,padding:"3px 5px"}}/></td>
-                          <td className="tr mono muted">{line.total_days||"—"}</td>
-                          <td><span style={{fontSize:11,color:"#888780"}}>{line.remark||"—"}</span></td>
-                          <td colSpan={2}/>
+                          <td><span className="text-[12px] text-foreground/80">{line.end_user||"—"}</span></td>
+                          <td><DateField className="h-6" defaultValue={line.start_date||""} readOnly={reallyLocked}/></td>
+                          <td><DateField className="h-6" defaultValue={line.end_date||""} readOnly={reallyLocked} copyFrom={line.start_date||""} pasteOnly={line.start_date||""}/></td>
+                          <td className="text-right font-mono text-muted-foreground">{line.total_days||"—"}</td>
+                          <td><span className="text-[12px] text-muted-foreground">{line.remark||"—"}</span></td>
+                          <td/>{/* Action */}
+                          <td/>
                         </tr>
                       ))}
                       {isMultiSplit&&isEx&&(
-                        <tr className={"row-addsplit"+(reallyLocked?" row-addsplit-locked":"")}>
-                          <td colSpan={colSpanFull-2} style={{textAlign:"right"}}>
-                            <span className="val-ok">
+                        <tr className={cn("border-b-2",reallyLocked?"border-destructive/30 bg-destructive/10":"border-border bg-accent/20")}>
+                          <td colSpan={colSpanFull-3} className="text-right">
+                            <span className="text-[11px] font-semibold text-success">
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
                             &nbsp;&nbsp;
-                            {!reallyLocked&&<button className="btn-split"
+                            {!reallyLocked&&<Button variant="outline" size="sm" className="h-6 border-primary/40 px-2 text-[11px] text-primary"
                               onClick={()=>startMultiEdit(inv.source_key,inv.splits)}>
                               ✎ Edit
-                            </button>}
+                            </Button>}
                           </td>
                           <td colSpan={3}/>
                         </tr>
@@ -814,43 +846,46 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         const tDays=line.sd&&line.ed
                           ?Math.round((new Date(line.ed)-new Date(line.sd))/86400000)+1:"";
                         return(
-                          <tr key={"d"+li} className="row-split">
-                            <td colSpan={isSales?5:6}/>
-                            <td colSpan={2}>
-                              <div style={{display:"flex",alignItems:"center",gap:6,paddingLeft:12}}>
-                                <div style={{width:2,height:34,background:"#85B7EB",flexShrink:0,marginRight:6,borderRadius:1}}/>
-                                <select className="cat-sel" value={line.cat}
-                                  onChange={e=>updateSplitLine(inv.source_key,li,"cat",e.target.value)}>
-                                  {CAT_OPTIONS_NO_BLANK}
-                                </select>
+                          <tr key={"d"+li} className={cn("border-b border-border/40",SPLIT_BG)}>
+                            <td colSpan={isSales?6:7} {...fz(0,SPLIT_BG)}/>
+                            {/* Desc. */}
+                            <td {...fz(FROZEN-1,SPLIT_BG)}>
+                              <div className="flex items-center gap-2 pl-1">
+                                <div className="h-[30px] w-0.5 shrink-0 rounded-sm bg-primary/40"/>
+                                <span className="text-[12px] font-semibold text-foreground">Split line {li+1}</span>
                               </div>
                             </td>
-                            <td/>
-                            <td className="tr">
-                              <input type="text" className="split-amt-inp" value={line.amt}
+                            <td/>{/* Home DR */}
+                            <td/>{/* Home CR */}
+                            {/* Amount */}
+                            <td className="text-right">
+                              <Input type="text" className="ml-auto h-6 w-[90px] border-primary/40 px-1.5 text-right font-mono text-[12px]" value={line.amt}
                                 onChange={e=>updateSplitLine(inv.source_key,li,"amt",e.target.value)}
-                                placeholder="0"/>
+                                placeholder="0.00"/>
                             </td>
-                            <td><CatBadge cat={line.cat}/></td>
+                            {/* Type */}
                             <td>
-                              <input type="date" className="f-date" value={line.sd}
-                                onChange={e=>updateSplitLine(inv.source_key,li,"sd",e.target.value)}
-                                style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                              <select className={catSelCls} value={line.cat}
+                                onChange={e=>updateSplitLine(inv.source_key,li,"cat",e.target.value)}>
+                                {CAT_OPTIONS_NO_BLANK}
+                              </select>
+                            </td>
+                            <td><span className="text-muted-foreground">—</span></td>{/* End User */}
+                            <td>
+                              <DateField className="h-6" tone="primary" value={line.sd}
+                                onChange={v=>updateSplitLine(inv.source_key,li,"sd",v)}/>
                             </td>
                             <td>
-                              <input type="date" className="f-date" value={line.ed}
-                                onChange={e=>updateSplitLine(inv.source_key,li,"ed",e.target.value)}
-                                style={{width:96,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                              <DateField className="h-6" tone="primary" value={line.ed} copyFrom={line.sd} pasteOnly={line.sd}
+                                onChange={v=>updateSplitLine(inv.source_key,li,"ed",v)}/>
                             </td>
-                            <td className="tr mono muted">{tDays||"—"}</td>
+                            <td className="text-right font-mono text-muted-foreground">{tDays||"—"}</td>
                             <td>
-                              <input type="text" className="f-date" value={line.rm||""}
-                                onChange={e=>updateSplitLine(inv.source_key,li,"rm",e.target.value)}
-                                placeholder="Remark…"
-                                style={{width:80,fontSize:11,padding:"3px 5px",borderColor:"#85B7EB"}}/>
+                              <RemarkField tone="primary" width={96} value={line.rm||""} context={`${inv.ref_no1||"Invoice"} · split line ${li+1}`}
+                                onChange={v=>updateSplitLine(inv.source_key,li,"rm",v)}/>
                             </td>
-                            <td style={{whiteSpace:"nowrap"}}>
-                              <button className="btn-del" onClick={()=>removeSplitLine(inv.source_key,li)}>✕</button>
+                            <td className="whitespace-nowrap">
+                              <Button variant="outline" size="sm" className="h-6 border-destructive/40 px-2 text-[11px] text-destructive" onClick={()=>removeSplitLine(inv.source_key,li)}>✕</Button>
                             </td>
                             <td/>
                           </tr>
@@ -860,17 +895,17 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         const total=inDraft.lines.reduce((s,l)=>s+(parseFloat(l.amt)||0),0);
                         const valid=Math.abs(total-amt)<1;
                         return(
-                          <tr className="row-addsplit">
-                            <td colSpan={colSpanFull-1} style={{textAlign:"right"}}>
+                          <tr className="border-b-2 border-border bg-accent/20">
+                            <td colSpan={colSpanFull-3} className="text-right">
                               {valid
-                                ?<span className="val-ok">✓ {fmtMYR(total)} = {fmtMYR(amt)}</span>
-                                :<span className="val-warn">⚠ {fmtMYR(total)} / {fmtMYR(amt)}</span>}
+                                ?<span className="text-[11px] font-semibold text-success">✓ {fmtMYR(total)} = {fmtMYR(amt)}</span>
+                                :<span className="text-[11px] font-semibold text-warning">⚠ {fmtMYR(total)} / {fmtMYR(amt)}</span>}
                               &nbsp;&nbsp;
-                              <button className="btn-add" onClick={()=>addSplitLine(inv.source_key)}>+ Add line</button>
+                              <Button variant="outline" size="sm" className="h-6 border-dashed border-primary/40 px-2 text-[11px] text-primary" onClick={()=>addSplitLine(inv.source_key)}>+ Add line</Button>
                             </td>
-                            <td colSpan={2} style={{textAlign:"right",whiteSpace:"nowrap"}}>
-                              <button className="btn-save" onClick={()=>saveSplit_(inv.source_key,amt)} style={{marginRight:4}}>Save split</button>
-                              <button className="btn-del" onClick={()=>setSplitState(p=>{const n={...p};delete n[inv.source_key];return n;})}>Cancel</button>
+                            <td colSpan={2} className="whitespace-nowrap text-right">
+                              <Button size="sm" className="mr-1 h-6 px-2 text-[11px]" onClick={()=>saveSplit_(inv.source_key,amt)}>Save split</Button>
+                              <Button variant="outline" size="sm" className="h-6 border-destructive/40 px-2 text-[11px] text-destructive" onClick={()=>setSplitState(p=>{const n={...p};delete n[inv.source_key];return n;})}>Cancel</Button>
                             </td>
                             <td/>
                           </tr>
@@ -880,57 +915,63 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                   );
                 })}
 
-                {filtered.length===0&&(
+                {filtered.length===0&&(loading ? (
+                  Array.from({length:6}).map((_,i)=>(
+                    <tr key={"sk"+i}><td colSpan={colSpanFull+1} className="px-4 py-2"><Skeleton className="h-4 w-full"/></td></tr>
+                  ))
+                ) : (
                   <tr>
-                    <td colSpan={colSpanFull+1} style={{textAlign:"center",padding:24,color:"#888780"}}>
-                      {invoices.length===0
-                        ?"No invoices found. Select a period and click Run."
-                        :"No results match your search."}
+                    <td colSpan={colSpanFull+1} className="py-10 text-center">
+                      <div className="text-sm font-semibold text-foreground">
+                        {invoices.length===0 ? "No data for this period" : "No results match your search"}
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {invoices.length===0 ? "Try a different period or entity." : "Clear the search or column filters to see all invoices."}
+                      </div>
                     </td>
                   </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </div>
 
-          <div className="tbl-foot">
-            <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <div className="foot-dot" style={{background:"#185FA5"}}/>
+          <div className="flex flex-wrap items-center gap-3.5 px-4 py-2.5 text-[12px]">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="h-1.5 w-1.5 shrink-0 rounded-sm" style={{background:"#185FA5"}}/>
               <span>PS: <strong>{fmtMYR(totPS)}</strong></span>
-              <div className="foot-dot" style={{background:"#7F77DD"}}/>
+              <div className="h-1.5 w-1.5 shrink-0 rounded-sm" style={{background:"#7F77DD"}}/>
               <span>Licence: <strong>{fmtMYR(totLIC)}</strong></span>
-              <div className="foot-dot" style={{background:"#E65100"}}/>
+              <div className="h-1.5 w-1.5 shrink-0 rounded-sm" style={{background:"#E65100"}}/>
               <span>HW: <strong>{fmtMYR(totHW)}</strong></span>
-              <div className="foot-dot" style={{background:"#1B5E20"}}/>
+              <div className="h-1.5 w-1.5 shrink-0 rounded-sm" style={{background:"#1B5E20"}}/>
               <span>AMS: <strong>{fmtMYR(totAMS)}</strong></span>
-              <div className="foot-dot" style={{background:"#F57F17"}}/>
+              <div className="h-1.5 w-1.5 shrink-0 rounded-sm" style={{background:"#F57F17"}}/>
               <span>Training: <strong>{fmtMYR(totTRN)}</strong></span>
-              <div className="foot-dot" style={{background:"#e8e7e0"}}/>
+              <div className="h-1.5 w-1.5 shrink-0 rounded-sm bg-border"/>
               <span>Uncategorised: <strong>{fmtMYR(totUnc)}</strong></span>
             </div>
-            <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:10}}>
-              <button className="btn-newline" onClick={()=>setNewLineOpen(true)}>
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v10M3 8h10"/></svg>
+            <div className="ml-auto flex flex-wrap items-center gap-2.5">
+              <Button variant="success" size="sm" className="gap-1.5" onClick={()=>setNewLineOpen(true)}>
+                <Plus className="h-3 w-3"/>
                 New {isSales?"sales":"purchase"} adjustment line
-              </button>
-              <button className="btn-newtask" onClick={()=>setTaskModal(true)}>
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="10" height="10" rx="1.5"/><path d="M6 8h4M8 6v4"/></svg>
+              </Button>
+              <Button size="sm" className="gap-1.5" onClick={()=>setTaskModal(true)}>
+                <ClipboardList className="h-3 w-3"/>
                 New task
-              </button>
+              </Button>
             </div>
           </div>
-        </div>
+        </Card>
 
         {newLineOpen&&(
-          <div style={{overflowX:"auto",overflowY:"visible",width:"100%",marginTop:0}}>
-            <table style={{borderCollapse:"collapse",minWidth:tableMinWidth}}>
+          <div className="w-full overflow-x-auto" style={{overflowY:"visible"}}>
+            <table className="border-collapse">
               <tbody>
-                <tr className="new-line-row">
-                  <td><span className="new-line-lbl">Date</span>
-                    <input type="date" onChange={e=>{newLineRef.current.date=e.target.value;}}/></td>
-                  <td colSpan={2}><span className="new-line-lbl">Account</span>
-                      <select style={{width:220,fontSize:11,padding:"3px 6px",
-                                     border:"1px solid #e8e7e0",borderRadius:4}}
+                <tr className="border-b-2 border-success/50 bg-success/10">
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Date</span>
+                    <DateField className="h-6" tone="success" onChange={v=>{newLineRef.current.date=v;}}/></td>
+                  <td colSpan={2} className="px-2 py-1.5"><span className={newLineLblCls}>Account</span>
+                      <select className={cn(newLineInpCls,"block")} style={{width:220}}
                         onChange={e=>{
                           const opt = e.target.options[e.target.selectedIndex];
                           newLineRef.current.accNo = opt.value;
@@ -944,9 +985,8 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                         ))}
                       </select>
                   </td>
-                  <td colSpan={2}><span className="new-line-lbl">Debtor / Creditor</span>
-                      <select style={{width:220,fontSize:11,padding:"3px 6px",
-                                     border:"1px solid #e8e7e0",borderRadius:4}}
+                  <td colSpan={2} className="px-2 py-1.5"><span className={newLineLblCls}>Debtor / Creditor</span>
+                      <select className={cn(newLineInpCls,"block")} style={{width:220}}
                           defaultValue=""
                           onChange={e=>{
                               newLineRef.current.deAccNo=e.target.value;
@@ -959,47 +999,45 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                           ))}
                       </select>
                   </td>
-                  <td><span className="new-line-lbl">Project Code</span>
-                    <input type="text" placeholder="PRJ-001" style={{width:90}}
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Project Code</span>
+                    <Input type="text" className={newLineInpCls} placeholder="PRJ-001" style={{width:90}}
                       onChange={e=>{newLineRef.current.proj=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">Ref. 1</span>
-                    <input type="text" placeholder="Ref no." style={{width:90}}
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Ref. 1</span>
+                    <Input type="text" className={newLineInpCls} placeholder="Ref no." style={{width:90}}
                       onChange={e=>{newLineRef.current.ref=e.target.value;}}/></td>
-                  {!isSales&&<td><span className="new-line-lbl">Ref. 2</span>
-                    <input type="text" placeholder="Ref no." style={{width:90}}
+                  {!isSales&&<td className="px-2 py-1.5"><span className={newLineLblCls}>Ref. 2</span>
+                    <Input type="text" className={newLineInpCls} placeholder="Ref no." style={{width:90}}
                       onChange={e=>{newLineRef.current.ref2=e.target.value;}}/></td>}
-                  <td><span className="new-line-lbl">Desc.</span>
-                    <input type="text" placeholder="Description"
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Desc.</span>
+                    <Input type="text" className={newLineInpCls} placeholder="Description"
                       onChange={e=>{newLineRef.current.desc=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">Home DR</span>
-                    <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}}
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Home DR</span>
+                    <Input type="text" className={cn(newLineInpCls,"text-right")} placeholder="0.00" style={{width:80}}
                       onChange={e=>{newLineRef.current.hdr=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">Home CR</span>
-                    <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}}
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Home CR</span>
+                    <Input type="text" className={cn(newLineInpCls,"text-right")} placeholder="0.00" style={{width:80}}
                       onChange={e=>{newLineRef.current.hcr=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">Amount</span>
-                    <input type="text" placeholder="0.00" style={{width:80,textAlign:"right"}} readOnly/></td>
-                  <td><span className="new-line-lbl">Type</span>
-                    <select onChange={e=>{newLineRef.current.cat=e.target.value;}}>
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Amount</span>
+                    <Input type="text" className={cn(newLineInpCls,"text-right")} placeholder="0.00" style={{width:80}} readOnly/></td>
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Type</span>
+                    <select className={cn(newLineInpCls,"block")} onChange={e=>{newLineRef.current.cat=e.target.value;}}>
                       {CAT_OPTIONS_NO_BLANK}
                     </select></td>
-                  <td><span className="new-line-lbl">End User</span>
-                    <input type="text" placeholder="End user" style={{width:100}}
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>End User</span>
+                    <Input type="text" className={newLineInpCls} placeholder="End user" style={{width:100}}
                       onChange={e=>{newLineRef.current.eu=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">Start Date</span>
-                    <input type="date" onChange={e=>{newLineRef.current.sd=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">End Date</span>
-                    <input type="date" onChange={e=>{newLineRef.current.ed=e.target.value;}}/></td>
-                  <td><span className="new-line-lbl">Days</span>
-                    <input type="text" placeholder="—" style={{width:60,textAlign:"right"}} readOnly/></td>
-                  <td colSpan={2} style={{whiteSpace:"nowrap",verticalAlign:"bottom"}}>
-                    <span className="new-line-lbl" style={{display:"block",marginBottom:2}}>Remark</span>
-                    <input type="text" placeholder="Optional…"
-                      style={{width:110,fontSize:11,border:"1px solid #e8e7e0",
-                              borderRadius:4,padding:"3px 6px",marginBottom:3,display:"block"}}
-                      onChange={e=>{newLineRef.current.rm=e.target.value;}}/>
-                    <button className="btn-save" onClick={handleNewLine} disabled={newLineSaving} style={{marginRight:4}}>{newLineSaving?"Saving…":"Save"}</button>
-                    <button className="btn-del" onClick={()=>setNewLineOpen(false)}>✕</button>
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Start Date</span>
+                    <DateField className="h-6" tone="success" onChange={v=>{newLineRef.current.sd=v;}}/></td>
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>End Date</span>
+                    <DateField className="h-6" tone="success" copyFrom={()=>newLineRef.current.sd} pasteOnly={()=>newLineRef.current.sd} onChange={v=>{newLineRef.current.ed=v;}}/></td>
+                  <td className="px-2 py-1.5"><span className={newLineLblCls}>Days</span>
+                    <Input type="text" className={cn(newLineInpCls,"text-right")} placeholder="—" style={{width:60}} readOnly/></td>
+                  <td colSpan={2} className="whitespace-nowrap px-2 py-1.5 align-bottom">
+                    <span className={cn(newLineLblCls,"mb-0.5 block")}>Remark</span>
+                    <RemarkField tone="success" placeholder="Optional…" className="mb-1" context="New manual line"
+                      onChange={v=>{newLineRef.current.rm=v;}}/>
+                    <Button size="sm" className="mr-1 h-6 px-2 text-[11px]" onClick={handleNewLine} disabled={newLineSaving}>{newLineSaving?"Saving…":"Save"}</Button>
+                    <Button variant="outline" size="sm" className="h-6 border-destructive/40 px-2 text-[11px] text-destructive" onClick={()=>setNewLineOpen(false)}>✕</Button>
                   </td>
                   <td/>
                 </tr>
@@ -1007,7 +1045,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
             </table>
           </div>
         )}
-
+        </div>
       </div>
 
       <LockModal open={lockModal} onClose={()=>setLockModal(false)} onConfirm={handleLock}/>
@@ -1035,7 +1073,7 @@ export default function InvoiceTab({tab,entity="QM",setEntity,entities=[]}){
                 showToast("⚠ Failed to submit unlock request: "+e.message);
             }
         }}/>
-      <TaskModal open={taskModal} defaultSrc={tab} onClose={()=>setTaskModal(false)}
+      <TaskModal open={taskModal} defaultSrc={tab==="sales"?"sales":"purchases"} onClose={()=>setTaskModal(false)}
         onSave={async(form)=>{
             try{
                 await createTask({

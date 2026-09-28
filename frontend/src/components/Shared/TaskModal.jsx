@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from "react";
-import API from "../../services/api";
+import { getUsers } from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "../ui/dialog";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../ui/select";
 
 export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
   const { user } = useAuth();
@@ -18,7 +23,7 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
   useEffect(() => {
     if (!open) return;
     if (isManager) {
-      API.get("/api/auth/users")
+      getUsers()
         .then(r => {
           const data = Array.isArray(r.data) ? r.data : [];
           setUsers(data);
@@ -43,87 +48,91 @@ export default function TaskModal({ open, defaultSrc, onClose, onSave }) {
     }
   }, [open]);
 
-  if (!open) return null;
-  const u = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
-
+  // Inline field errors (replaces the old browser alert() popups).
+  const [errors, setErrors] = useState({});
+  useEffect(() => { if (open) setErrors({}); }, [open]);
+  const u = k => e => { setForm(p => ({ ...p, [k]: e.target.value })); setErrors(p => ({ ...p, [k]: undefined })); };
+  const uv = k => v => { setForm(p => ({ ...p, [k]: v })); setErrors(p => ({ ...p, [k]: undefined })); };
 
   const handleSave = () => {
-    console.log("handleSave called", form);
-    if (!form.todo.trim()) { alert("Please enter a task title."); return; }
-    if (!form.assignee)    { alert("Please select an assignee."); return; }
-    console.log("calling onSave with", form);
+    const next = {};
+    if (!form.todo.trim()) next.todo = "Enter a task title.";
+    if (!form.assignee)    next.assignee = "Select who this task is assigned to.";
+    setErrors(next);
+    if (Object.keys(next).length) return;
     onSave(form);
-};
+  };
+  const FieldError = ({ k }) => errors[k] ? <p className="text-[11px] font-medium text-destructive">{errors[k]}</p> : null;
+
   return (
-    <div className="modal-bg" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{ width: 460 }}>
-        <div className="modal-title">✓ New Adjustment Task</div>
-        <div className="modal-sub">Flag an unusual item that needs correction.</div>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>✓ New Adjustment Task</DialogTitle>
+          <DialogDescription>Flag an unusual item that needs correction.</DialogDescription>
+        </DialogHeader>
 
-        <div className="modal-field">
-          <label>Source</label>
-          <select value={form.src} onChange={u("src")}>
-            <option value="sales">Sales</option>
-            <option value="purchases">Purchases</option>
-          </select>
-        </div>
-
-        <div className="modal-field">
-          <label>Task Title</label>
-          <input type="text" value={form.todo} onChange={u("todo")}
-            placeholder="e.g. Wrong invoice amount — INV-2025-002"/>
-        </div>
-
-        <div className="modal-field">
-          <label>Description</label>
-          <input type="text" value={form.desc} onChange={u("desc")}
-            placeholder="Describe the issue"/>
-        </div>
-
-        <div className="modal-field">
-          <label>Remark</label>
-          <input type="text" value={form.remark} onChange={u("remark")}
-            placeholder="Optional note or reference"/>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div className="modal-field" style={{ marginBottom: 0 }}>
-            <label>Assigned To</label>
-            {isManager ? (
-              <select value={form.assignee} onChange={u("assignee")}>
-                <option value="">— Select assignee</option>
-                {users.map(usr => (
-                  <option key={usr.user_id} value={usr.user_id}>
-                    {usr.display_name}
-                    {usr.role === "manager" ? " (Manager)" : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="text"
-                value={user?.display_name || ""}
-                readOnly
-                style={{ background: "#f5f5f0", color: "#888780" }}
-              />
-            )}
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Source</Label>
+            <Select value={form.src} onValueChange={uv("src")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sales">Sales</SelectItem>
+                <SelectItem value="purchases">Purchases</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className="modal-field" style={{ marginBottom: 0 }}>
-            <label>Due Date</label>
-            <input type="date" value={form.due} onChange={u("due")}
-              style={{ width: "100%", fontSize: 11, padding: "7px 10px",
-                border: "1px solid #e8e7e0", borderRadius: 6 }}/>
+          <div className="space-y-1.5">
+            <Label>Task Title</Label>
+            <Input value={form.todo} onChange={u("todo")} placeholder="e.g. Wrong invoice amount — INV-2025-002"
+              aria-invalid={!!errors.todo} className={errors.todo ? "border-destructive" : undefined} />
+            <FieldError k="todo" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Input value={form.desc} onChange={u("desc")} placeholder="Describe the issue" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Remark</Label>
+            <Input value={form.remark} onChange={u("remark")} placeholder="Optional note or reference" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Assigned To</Label>
+              {isManager ? (
+                <Select value={form.assignee} onValueChange={uv("assignee")}>
+                  <SelectTrigger aria-invalid={!!errors.assignee} className={errors.assignee ? "border-destructive" : undefined}><SelectValue placeholder="— Select assignee" /></SelectTrigger>
+                  <SelectContent>
+                    {users.map(usr => (
+                      <SelectItem key={usr.user_id} value={usr.user_id}>
+                        {usr.display_name}{usr.role === "manager" ? " (Manager)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={user?.display_name || ""} readOnly className="bg-muted text-muted-foreground" />
+              )}
+              <FieldError k="assignee" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Due Date</Label>
+              <Input type="date" value={form.due} onChange={u("due")} />
+            </div>
           </div>
         </div>
 
-        <div className="modal-actions">
-          <button className="btn-modal-cancel" onClick={onClose}>Cancel</button>
-          <button className="btn-modal-submit" onClick={handleSave}>
-            Create Task
-          </button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave}>Create Task</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

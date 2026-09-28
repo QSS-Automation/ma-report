@@ -29,6 +29,13 @@ class PnlRow(BaseModel):
     tag:        Optional[str]  = None
     months:     list[Optional[Decimal]]
     total:      Optional[Decimal] = None
+    # NEW — nested rows (e.g. an "Operating Expenses" umbrella row's ~30
+    # tag children, or a "MFRS 2026 Recognition" row's per-account
+    # children). None/omitted for every row that isn't a collapsible
+    # parent — old P&L rows never set this, so they're unaffected.
+    children:   Optional[list["PnlRow"]] = None
+
+PnlRow.model_rebuild()  # required for the self-referencing type above
 
 class PnlResponse(BaseModel):
     from_date:    date; to_date: date
@@ -74,7 +81,7 @@ class SplitLineIn(BaseModel):
     start_date:   Optional[date] = None
     end_date:     Optional[date] = None
     split_amount: Decimal
-    #remark:       Optional[str]  = None
+    remark:       Optional[str]  = None
 
 class SaveSplitsRequest(BaseModel):
     source_key: int; journal_type: Literal["SALES","PURCHASE"]
@@ -86,6 +93,8 @@ class SaveSplitsResponse(BaseModel):
 
 class ManualLineIn(BaseModel):
     journal_type: Literal["SALES","PURCHASE"]; trans_date: date
+    acc_no:       Optional[str]  = None
+    de_acc_no:    Optional[str]  = None
     de_acc_desc:  Optional[str]  = None; proj_no:   Optional[str]  = None
     ref_no1:      Optional[str]  = None; description: Optional[str] = None
     home_dr:      Decimal = Decimal("0"); home_cr: Decimal = Decimal("0")
@@ -104,13 +113,16 @@ class MfrsRow(BaseModel):
     net_amount: Decimal; total_days: Optional[int]
     monthly: dict[str, Optional[Decimal]]
     locked_at: Optional[datetime]; locked_by: Optional[str]
+    # Extra display columns for the MFRS table (optional, additive).
+    ref_no2: Optional[str] = None; de_acc_desc: Optional[str] = None
+    start_date: Optional[date] = None; end_date: Optional[date] = None
 
 class MfrsResponse(BaseModel):
     journal_type: Literal["SALES","PURCHASE"]; recognised_years: list[int]
     month_columns: list[str]; rows: list[MfrsRow]
 
 class LockPeriodRequest(BaseModel):
-    journal_type: Literal["SALES","PURCHASE"]; lock_year_month: str; user: str
+    entity: str; journal_type: Literal["SALES","PURCHASE"]; lock_year_month: str; user: str
 
 class LockPeriodResponse(BaseModel):
     status: Literal["ok","error"]; locked_rows: int; message: Optional[str] = None

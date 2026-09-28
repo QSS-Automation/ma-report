@@ -3,19 +3,41 @@ import TaskModal from "../Shared/TaskModal";
 import { showToast } from "../../utils/toast";
 import { useAuth } from "../../context/AuthContext";
 import { getTasks, createTask, updateTask } from "../../services/api";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
+import { PageHeader } from "../ui/page-header";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../ui/select";
+import { PageShell, FilterBar, FilterLabel } from "../ui/page-shell";
+import { FilterPill } from "../ui/filter-pill";
+import { TableSkeleton } from "../ui/skeleton";
+import { EmptyState } from "../ui/empty-state";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
+import { cn } from "../../lib/utils";
 
+// Sticky first (identifying) column keeps the task's Todo visible while the
+// rest of the row scrolls horizontally — needs its own *opaque* background
+// matching its row so scrolled columns don't bleed through underneath it.
+const STICKY = "sticky left-0 z-10";
 
 const ST_META = {
-  open:           { label: "Open",           cls: "task-st-open"      },
-  inprog:         { label: "In Progress",    cls: "task-st-inprog"    },
-  done:           { label: "Done",           cls: "task-st-done"      },
-  checked:        { label: "Checked",        cls: "task-st-checked"   },
-  cancelled:      { label: "Cancelled",      cls: "task-st-cancelled" },
-  unlock_pending: { label: "Unlock Pending", cls: "task-st-open"      },
-  unlocked:       { label: "Unlocked",       cls: "task-st-done"      },
+  open:           { label: "Open",           variant: "warning"     },
+  inprog:         { label: "In Progress",    variant: "default"     },
+  done:           { label: "Done",           variant: "success"     },
+  checked:        { label: "Checked",        variant: "default"     },
+  cancelled:      { label: "Cancelled",      variant: "muted"       },
+  unlock_pending: { label: "Unlock Pending", variant: "warning"     },
+  unlocked:       { label: "Unlocked",       variant: "success"     },
 };
 
-export default function AdjTasks({ entity = "QM", entities = [] }) {
+// Status filter options differ per list: unlock requests have their own
+// statuses, which the old single list didn't offer at all.
+const STATUS_OPTIONS = {
+  general: ["open", "inprog", "done", "checked", "cancelled"],
+  unlock:  ["unlock_pending", "unlocked", "cancelled"],
+};
+
+export default function AdjTasks({ entity = "QM" }) {
   const { user } = useAuth();
   const isManager = user?.role === "manager" || user?.role === "admin";
 
@@ -23,7 +45,6 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
   const [loading, setLoading] = useState(false);
   const [fStatus, setFStatus] = useState("all");
   const [fSrc,    setFSrc]    = useState("all");
-  const [fEntity, setFEntity] = useState("all");
   const [modal,   setModal]   = useState(false);
   const [subTab,  setSubTab]  = useState("general");
 
@@ -101,187 +122,158 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
 
   const filtered = displayed.filter(t =>
     (fStatus === "all" || t.status === fStatus) &&
-    (fSrc    === "all" || t.source === fSrc || t.src === fSrc) &&
-    (fEntity === "all" || t.entity === fEntity)
+    (fSrc    === "all" || t.source === fSrc || t.src === fSrc)
   );
+  // Tasks are already fetched for the global entity, so no separate entity filter.
+  const statusOpts = isManager && subTab === "unlock" ? STATUS_OPTIONS.unlock : STATUS_OPTIONS.general;
 
   const openCount = visibleTasks.filter(t =>
     t.status === "open" || t.status === "inprog"
   ).length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", minHeight: 0 }}>
-
-      {/* ── Header ── */}
-      <div className="pg-hdr">
-        <div className="pg-title">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#185FA5" strokeWidth="1.5">
-            <rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M5 7l2 2 4-4"/>
-          </svg>
-          Adjustment Tasks <span className="pg-badge">{openCount} open</span>
-        </div>
-        <div className="pg-actions">
-          {isManager && (
-            <button className="pg-btn" onClick={() => setModal(true)}>+ New Task</button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Manager sub-tabs ── */}
-      {isManager && (
-        <div style={{ display: "flex", gap: 8, padding: "8px 18px", borderBottom: "1px solid #e8e7e0" }}>
-          <button
-            className={"view-tab" + (subTab === "general" ? " on" : "")}
-            onClick={() => setSubTab("general")}>
-            Tasks
-            {generalTasks.length > 0 && (
-              <span className="pg-badge" style={{ marginLeft: 6 }}>{generalTasks.length}</span>
+    <PageShell>
+          <PageHeader
+            eyebrow="Adjustment"
+            title="Adjustment Tasks"
+            subtitle={`${entity} · ${openCount} open`}
+            actions={isManager && (
+              <Button size="sm" onClick={() => setModal(true)}>+ New Task</Button>
             )}
-          </button>
-          <button
-            className={"view-tab" + (subTab === "unlock" ? " on" : "")}
-            onClick={() => setSubTab("unlock")}>
-            Unlock Requests
-            {unlockRequests.length > 0 && (
-              <span className="pg-badge" style={{ marginLeft: 6, background: "#E24B4A" }}>
-                {unlockRequests.length}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
+          />
 
-      {/* ── Filters ── */}
-      <div className="filter">
-        <span className="f-lbl">Status</span>
-        <select className="f-sel" value={fStatus} onChange={e => setFStatus(e.target.value)}>
-          <option value="all">All</option>
-          <option value="open">Open</option>
-          <option value="inprog">In Progress</option>
-          <option value="done">Done</option>
-          <option value="checked">Checked</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-        <span className="f-lbl">Entity</span>
-        <select className="f-sel" value={fEntity} onChange={e => setFEntity(e.target.value)}>
-          <option value="all">All</option>
-          {entities.map(e => (
-            <option key={e.entity_code} value={e.entity_code}>{e.entity_code}</option>
-          ))}
-        </select>
-        <div className="f-div"/>
-        <span className="f-lbl">Source</span>
-        <select className="f-sel" value={fSrc} onChange={e => setFSrc(e.target.value)}>
-          <option value="all">All</option>
-          <option value="sales">Sales</option>
-          <option value="purchases">Purchases</option>
-        </select>
-      </div>
+          {/* Manager sub-tabs (left) + filters (right), one line */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            {isManager ? (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <FilterPill active={subTab === "general"} onClick={() => { setSubTab("general"); setFStatus("all"); }}>
+                  Tasks
+                  {generalTasks.length > 0 && <Badge>{generalTasks.length}</Badge>}
+                </FilterPill>
+                <FilterPill active={subTab === "unlock"} onClick={() => { setSubTab("unlock"); setFStatus("all"); }}>
+                  Unlock Requests
+                  {unlockRequests.length > 0 && <Badge variant="destructive">{unlockRequests.length}</Badge>}
+                </FilterPill>
+              </div>
+            ) : <div />}
 
-      {/* ── Table ── */}
-      <div className="content" style={{ padding: 0 }}>
-        {loading ? (
-          <div style={{ padding: "2rem", textAlign: "center", color: "#888780", fontSize: 13 }}>
-            Loading…
+            <FilterBar>
+              <FilterLabel>Status</FilterLabel>
+              <Select value={fStatus} onValueChange={setFStatus}>
+                <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  {statusOpts.map(s => <SelectItem key={s} value={s}>{ST_META[s].label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <FilterLabel>Source</FilterLabel>
+              <Select value={fSrc} onValueChange={setFSrc}>
+                <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="sales">Sales</SelectItem>
+                  <SelectItem value="purchases">Purchases</SelectItem>
+                </SelectContent>
+              </Select>
+            </FilterBar>
           </div>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#fafaf8" }}>
-                {["#", "Todo", "Description", "Remark", "Source", "Assigned To", "Due Date", "Status", "Action"].map(h => (
-                  <th key={h} style={{
-                    padding: "8px 12px", fontSize: 9, fontWeight: 700, color: "#888780",
-                    textTransform: "uppercase", borderBottom: "1px solid #e8e7e0",
-                    whiteSpace: h === "Action" ? "nowrap" : "normal"
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(t => {
-                const meta = ST_META[t.status] || ST_META.open;
-                const src  = t.source || t.src;
-                let actions = null;
 
-                if (!isManager) {
-                  if (t.status === "open")
-                    actions = (
-                      <button className="btn-save" style={{ marginRight: 4 }}
-                        onClick={() => upd(t.id, "inprog")}>Start</button>
-                    );
-                  if (t.status === "inprog")
-                    actions = (
-                      <button className="btn-save" style={{ background: "#1D9E75", marginRight: 4 }}
-                        onClick={() => upd(t.id, "done", {
-                          manager_id: t.created_by,
-                          todo: t.todo,
-                        })}>Mark Done</button>
-                    );
-                }
+          {/* Table */}
+          <Card className="overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-[18px] pb-2.5 pt-3.5">
+              <h3 className="text-base font-semibold">{isManager ? (subTab === "unlock" ? "Unlock requests" : "Tasks") : "My tasks"}</h3>
+              <p className="text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? "task" : "tasks"}</p>
+            </div>
+            {loading && !tasks.length ? <TableSkeleton cols={9} rows={6} /> : filtered.length === 0 ? (
+              <EmptyState title="No tasks" hint="Nothing matches the current filters." />
+            ) : (
+              <div className="overflow-x-auto">
+                <Table className="min-w-[1080px]">
+                  <TableHeader>
+                    <TableRow>
+                      {["#", "Todo", "Description", "Remark", "Source", "Assigned To", "Due Date", "Status", "Action"].map(h => (
+                        <TableHead key={h} className={cn(h === "Action" && "whitespace-nowrap", h === "Todo" && [STICKY, "min-w-[140px] bg-card"])}>{h}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map(t => {
+                      const meta = ST_META[t.status] || ST_META.open;
+                      const src  = t.source || t.src;
+                      let actions = null;
 
-                if (isManager) {
-                  if (t.status === "done")
-                    actions = (
-                      <button className="btn-save" style={{ background: "#185FA5", marginRight: 4 }}
-                        onClick={() => upd(t.id, "checked")}>✓ Check</button>
-                    );
-                  if (t.task_type === "unlock_request" && t.status === "unlock_pending")
-                    actions = (
-                      <button className="btn-save" style={{ background: "#1D9E75", marginRight: 4 }}
-                        onClick={() => upd(t.id, "unlocked", {
-                          // FIX: this button was only sending {status:"unlocked"}
-                          // with no source_key/journal_type — so tasks.py's
-                          // `if body["status"]=="unlocked" and body.get("source_key")`
-                          // check silently failed and MfrsService().unlock_period()
-                          // never actually ran. The task LOOKED approved (status
-                          // flipped), but the invoice stayed locked and its MFRS
-                          // rows were never removed. `t` already has both fields
-                          // from the GET /api/tasks response — just wasn't being
-                          // read.
-                          source_key: t.source_key,
-                          journal_type: t.journal_type,
-                        })}>Approve Unlock</button>
-                    );
-                  if (!["cancelled", "checked", "unlocked"].includes(t.status))
-                    actions = (
-                      <>{actions}
-                        <button className="btn-del"
-                          onClick={() => upd(t.id, "cancelled")}>Cancel</button>
-                      </>
-                    );
-                }
+                      if (!isManager) {
+                        if (t.status === "open")
+                          actions = (
+                            <Button size="sm" className="mr-1" onClick={() => upd(t.id, "inprog")}>Start</Button>
+                          );
+                        if (t.status === "inprog")
+                          actions = (
+                            <Button size="sm" variant="success" className="mr-1"
+                              onClick={() => upd(t.id, "done", {
+                                manager_id: t.created_by,
+                                todo: t.todo,
+                              })}>Mark Done</Button>
+                          );
+                      }
 
-                return (
-                  <tr key={t.id} className="task-row">
-                    <td style={{ color: "#888780", fontSize: 10 }}>#{t.id}</td>
-                    <td style={{ fontWeight: 500 }}>{t.todo}</td>
-                    <td style={{ color: "#5f5e5a", fontSize: 10 }}>{t.description || t.desc}</td>
-                    <td style={{ color: "#888780", fontSize: 10 }}>{t.remark || "—"}</td>
-                    <td>
-                      {src === "sales"
-                        ? <span className="bdg bdg-ps" style={{ fontSize: 8 }}>Sales</span>
-                        : <span className="bdg" style={{ fontSize: 8, background: "#E8F5E9", color: "#1B5E20" }}>Purchases</span>}
-                    </td>
-                    <td style={{ fontSize: 10 }}>{t.assigned_to}</td>
-                    <td style={{ fontSize: 10 }}>{t.due_date || t.due || "—"}</td>
-                    <td><span className={"task-inline-badge " + meta.cls}>{meta.label}</span></td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {actions || <span style={{ color: "#c8c6c0", fontSize: 9 }}>—</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: "center", padding: 24, color: "#888780" }}>
-                    No tasks match the current filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
+                      if (isManager) {
+                        if (t.status === "done")
+                          actions = (
+                            <Button size="sm" className="mr-1"
+                              onClick={() => upd(t.id, "checked")}>✓ Check</Button>
+                          );
+                        if (t.task_type === "unlock_request" && t.status === "unlock_pending")
+                          actions = (
+                            <Button size="sm" variant="success" className="mr-1"
+                              onClick={() => upd(t.id, "unlocked", {
+                                // FIX: this button was only sending {status:"unlocked"}
+                                // with no source_key/journal_type — so tasks.py's
+                                // `if body["status"]=="unlocked" and body.get("source_key")`
+                                // check silently failed and MfrsService().unlock_period()
+                                // never actually ran. The task LOOKED approved (status
+                                // flipped), but the invoice stayed locked and its MFRS
+                                // rows were never removed. `t` already has both fields
+                                // from the GET /api/tasks response — just wasn't being
+                                // read.
+                                source_key: t.source_key,
+                                journal_type: t.journal_type,
+                              })}>Approve Unlock</Button>
+                          );
+                        if (!["cancelled", "checked", "unlocked"].includes(t.status))
+                          actions = (
+                            <>{actions}
+                              <Button size="sm" variant="outline"
+                                onClick={() => upd(t.id, "cancelled")}>Cancel</Button>
+                            </>
+                          );
+                      }
+
+                      return (
+                        <TableRow key={t.id}>
+                          <TableCell className="text-[11px] text-muted-foreground">#{t.id}</TableCell>
+                          <TableCell className={cn(STICKY, "bg-card font-medium")}>{t.todo}</TableCell>
+                          <TableCell className="min-w-[240px] text-[13.5px] leading-snug text-muted-foreground">{t.description || t.desc}</TableCell>
+                          <TableCell className="min-w-[160px] text-[13.5px] leading-snug text-muted-foreground">{t.remark || "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant={src === "sales" ? "default" : "success"}>
+                              {src === "sales" ? "Sales" : "Purchases"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-[11px]">{t.assigned_to}</TableCell>
+                          <TableCell className="text-[11px]">{t.due_date || t.due || "—"}</TableCell>
+                          <TableCell><Badge variant={meta.variant}>{meta.label}</Badge></TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {actions || <span className="text-[10px] text-muted-foreground/60">—</span>}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </Card>
 
       <TaskModal
           key={modal ? "open" : "closed"}
@@ -290,6 +282,6 @@ export default function AdjTasks({ entity = "QM", entities = [] }) {
           onClose={() => setModal(false)}
           onSave={create}
       />
-    </div>
+    </PageShell>
   );
 }

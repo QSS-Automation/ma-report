@@ -1,15 +1,29 @@
 import React,{useState,useCallback,useEffect} from "react";
-import {getPnl, getPnlV2, getBs, refreshStaging, exportExcel} from "../../services/api";
+import { RefreshCw, Download, FileSpreadsheet } from "lucide-react";
+import {getPnl, getPnlV2, refreshStaging, exportExcel} from "../../services/api";
 import {useMonthPicker} from "../../hooks/useMonthPicker";
 import MonthPicker from "../Shared/MonthPicker";
-import {fmtMYRK,numFmt,MN} from "../../utils/fmt";
+import {fmtMYRK} from "../../utils/fmt";
 import {showToast} from "../../utils/toast";
 import PnLTable from "./PnLTable";
 import PnLTableV2 from "./PnLTableV2";
 import PnLCompare from "./PnLCompare";
-import PnLSideCards from "./PnLSideCards";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { PageHeader } from "../ui/page-header";
+import { PageShell, FilterBar, FilterLabel } from "../ui/page-shell";
+import { FilterPill } from "../ui/filter-pill";
+import { Segmented } from "../ui/segmented";
+import { TableSkeleton, KpiSkeleton } from "../ui/skeleton";
+import { EmptyState } from "../ui/empty-state";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
+import { cn } from "../../lib/utils";
 
-export default function PnL({ entity = "QM", setEntity, entities = [] }){
+const PRESETS = ["tm","lm","ty","ly"];
+const PRESET_LABEL = { tm:"This month", lm:"Last month", ty:"This year", ly:"Last year" };
+const VERSIONS = [{ value: "v1", label: "Classic P&L" }, { value: "v2", label: "New P&L (Beta)" }];
+
+export default function PnL({ entity = "QM" }){
   const now=new Date();
   const mp=useMonthPicker(now.getFullYear(),0,now.getFullYear(),11);
   const [data,setData]=useState(null);
@@ -22,7 +36,6 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
   const [preset,setPreset]=useState("ty");
   const [cmpData, setCmpData] = useState(null);
   const [rebuilding, setRebuilding] = useState(false);
-  useEffect(() => { setData(null); setDataV2(null); }, [entity]);
   const rebuild = useCallback(async () => {
     setRebuilding(true);
     try {
@@ -51,6 +64,11 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
       getPnl(entity,pyFyFrom, pyFyTo),
     ]);
     setData(res.data);
+    // The "vs Last Year" column is exactly the prior-same-period figures
+    // fetched above — reuse them so the comparison always matches the
+    // current entity + period (it used to be fetched once and never
+    // refreshed, and without the entity argument).
+    setLyData(pyRes.data);
     setCmpData({ active: res.data, priorSame: pyRes.data, priorFull: pyFyRes.data });
 
     if (pnlVersion === "v2") {
@@ -62,6 +80,13 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
   } catch (e) { showToast("⚠ " + e.message); }
   finally { setLoading(false); }
 }, [entity, mp.fromStr, mp.toStr, mp.s.fromYear, pnlVersion]);
+
+  // Run automatically when the tab first opens, and again whenever the
+  // entity or P&L version changes; period changes still wait for Run Report.
+  useEffect(() => {
+    setData(null); setDataV2(null); setLyData(null); setCmpData(null);
+    run();
+  }, [entity, pnlVersion]);
 
   const kpi=(section)=>{
     if(!data)return 0;
@@ -98,108 +123,93 @@ export default function PnL({ entity = "QM", setEntity, entities = [] }){
   a.click();
 };
 
+  const kpis = [
+    { label: "Net Sales", val: ns, tone: "text-primary", sub: "MYR" },
+    { label: "Gross Profit", val: gp, tone: gp>=0?"text-success":"text-destructive", sub: ns?((gp/ns)*100).toFixed(1)+"% margin":"—", subTone: ns?(gp/ns>=0?"text-success":"text-destructive"):"" },
+    { label: "Net Profit (before tax)", val: pbt, tone: pbt>=0?"text-success":"text-destructive", sub: ns?((pbt/ns)*100).toFixed(1)+"% margin":"—", subTone: ns?(pbt/ns>=0?"text-success":"text-destructive"):"" },
+    { label: "Net Profit (after tax)", val: pat, tone: pat>=0?"text-success":"text-destructive", sub: ns?((pat/ns)*100).toFixed(1)+"% margin":"—", subTone: ns?(pat/ns>=0?"text-success":"text-destructive"):"" },
+  ];
+
+  const detail = pnlVersion === "v2" ? dataV2 : data;
+
   return(
-    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden",minHeight:0}}>
-      <div className="pg-hdr">
-        <div className="pg-title">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#185FA5" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M4 11l2.5-3.5 2 2.5L11 5"/></svg>
-          P&amp;L Statement
-          <span className="pg-badge">{entity} · {mp.fromLabel}–{mp.toLabel}</span>
-        </div>
-        <div className="pg-actions">
-        <button
-          className="pg-btn"
-          onClick={() => { setPnlVersion(v => v === "v1" ? "v2" : "v1"); setData(null); setDataV2(null); }}
-          style={{ marginRight: 6, background: pnlVersion === "v2" ? "#7F77DD" : undefined, color: pnlVersion === "v2" ? "#fff" : undefined }}
-        >
-          {pnlVersion === "v2" ? "New P&L (Beta)" : "Classic P&L"}
-        </button>
-        <button className="pg-btn" onClick={rebuild} disabled={rebuilding}
-          style={{background:rebuilding?"#888780":"#6B7280", marginRight:6, color:"white"}}>
-          {rebuilding?"Rebuilding…":"Refresh"}
-        </button>
-        <button className="pg-btn" onClick={handleExportExcel} style={{marginRight:4}}>Export Full Excel</button>
-        <button className="pg-btn" onClick={exportCSV}>Export CSV</button>
-      </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Financial Reports"
+        title="P&L Statement"
+        subtitle={`${entity} · ${mp.fromLabel}–${mp.toLabel}`}
+        actions={
+          <>
+            <Segmented value={pnlVersion} onChange={setPnlVersion} options={VERSIONS} />
+            <Button variant="secondary" size="sm" onClick={rebuild} disabled={rebuilding}>
+              <RefreshCw className={cn("h-3.5 w-3.5", rebuilding && "animate-spin")} />
+              {rebuilding?"Rebuilding…":"Refresh staging"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportExcel}>
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Export Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportCSV}>
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
+          </>
+        }
+      />
 
-      <div className="filter">
-        <span className="f-lbl">Entity</span>
-          <select className="f-sel" value={entity} onChange={e => { setEntity(e.target.value); setData(null); setDataV2(null); }}>
-            {entities.map(e => (
-              <option key={e.entity_code} value={e.entity_code}>{e.entity_code}</option>
-            ))}
-          </select>
-          <div className="f-div"/>
-        <span className="f-lbl">From</span>
+      <FilterBar>
+        <FilterLabel>Period</FilterLabel>
         <MonthPicker label={mp.fromLabel} state={mp.s} side="from" onSelect={mp.sel}/>
-        <span className="f-lbl">To</span>
+        <span>–</span>
         <MonthPicker label={mp.toLabel} state={mp.s} side="to" onSelect={mp.sel}/>
-        <div className="f-div"/>
-        {["tm","lm","ty","ly"].map(p=>(
-          <button key={p} className={"f-pre"+(preset===p?" on":"")}
-            onClick={()=>{setPreset(p);mp.preset(p);}}>
-            {p==="tm"?"This month":p==="lm"?"Last month":p==="ty"?"This year":"Last year"}
-          </button>
+        {PRESETS.map(p=>(
+          <FilterPill key={p} active={preset===p} onClick={()=>{setPreset(p);mp.preset(p);}}>
+            {PRESET_LABEL[p]}
+          </FilterPill>
         ))}
-        <button className="run" onClick={run} disabled={loading}>{loading?"Loading…":"Run Report"}</button>
-      
+        <Button className="ml-auto" size="lg" onClick={run} disabled={loading}>{loading?"Loading…":"Run Report"}</Button>
+      </FilterBar>
+
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
+        {loading && !data ? <KpiSkeleton /> : kpis.map(k => (
+          <Card key={k.label} className="min-w-0 px-3.5 py-2.5">
+            <div className="truncate text-xs text-muted-foreground">{k.label}</div>
+            <div className={cn("mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums", k.tone)}>{fmtMYRK(k.val)}</div>
+            <div className={cn("mt-0.5 truncate text-xs text-muted-foreground", k.subTone)}>{k.sub}</div>
+          </Card>
+        ))}
       </div>
 
-      <div style={{padding:"12px 18px 0",flexShrink:0,background:"#fff",borderBottom:"1px solid #e8e7e0"}}>
-        <div className="kpi-row" style={{marginBottom:0}}>
-          <div className="kpi"><div className="kpi-lbl">Net Sales</div><div className="kpi-val b">{fmtMYRK(ns)}</div><div className="kpi-sub">MYR</div></div>
-          <div className="kpi"><div className="kpi-lbl">Gross Profit</div><div className={"kpi-val "+(gp>=0?"g":"r")}>{fmtMYRK(gp)}</div><div className="kpi-sub" style={{color:ns?(gp/ns)>=0?"#1D9E75":"#c0392b":"inherit"}}>{ns?((gp/ns)*100).toFixed(1)+"% margin":"—"}</div></div>
-          <div className="kpi"><div className="kpi-lbl">Net Profit (before tax)</div><div className={"kpi-val "+(pbt>=0?"g":"r")}>{fmtMYRK(pbt)}</div><div className="kpi-sub" style={{color:ns?(pbt/ns)>=0?"#1D9E75":"#c0392b":"inherit"}}>{ns?((pbt/ns)*100).toFixed(1)+"% margin":"—"}</div></div>
-          <div className="kpi"><div className="kpi-lbl">Net Profit (after tax)</div><div className={"kpi-val "+(pat>=0?"g":"r")}>{fmtMYRK(pat)}</div><div className="kpi-sub" style={{color:ns?(pat/ns)>=0?"#1D9E75":"#c0392b":"inherit"}}>{ns?((pat/ns)*100).toFixed(1)+"% margin":"—"}</div></div>
-        </div>
-      </div>
+      <Tabs value={view} onValueChange={setView}>
+        <TabsList>
+          <TabsTrigger value="detail">P&amp;L Detail</TabsTrigger>
+          <TabsTrigger value="cmp">Period Comparison</TabsTrigger>
+        </TabsList>
 
-      <div className="view-tabs">
-        <div className={"view-tab"+(view==="detail"?" on":"")} onClick={()=>setView("detail")}>P&amp;L Detail</div>
-        <div className={"view-tab"+(view==="cmp"?" on":"")} onClick={()=>setView("cmp")}>Period Comparison</div>
-      </div>
-
-      {view==="detail"&&(
-        <div style={{flex:1,overflowY:"auto",padding:"16px 18px"}}>
+        <TabsContent value="detail" className="pt-4">
           {pnlVersion==="v1"&&(
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-              <button className={"btn-yoy"+(yoy?" on":"")} onClick={async()=>{
-              const next=!yoy; setYoy(next);
-              if(next && data && !lyData){
-                try{
-                  const lyFrom=mp.fromStr.replace(/^(\d{4})/,y=>+y-1);
-                  const lyTo=mp.toStr.replace(/^(\d{4})/,y=>+y-1);
-                  const res=await getPnl(lyFrom,lyTo);
-                  setLyData(res.data);
-                }catch(e){showToast("⚠ "+e.message);}
-              }
-            }}>
-              {yoy?"Hide comparison":"vs Last Year"}
-            </button>
-              <span style={{fontSize:10,color:"#888780"}}>Toggle prior year comparison</span>
+            <div className="mb-3 flex items-center gap-2.5">
+              <FilterPill active={yoy} onClick={()=>setYoy(v=>!v)} disabled={!lyData}>
+                {yoy?"Hide comparison":"vs Last Year"}
+              </FilterPill>
+              <span className="text-[11px] text-muted-foreground">Adds a YoY % column against the same period last year</span>
             </div>
           )}
-          <div className="two-col">
-            {pnlVersion==="v2"
-              ? (dataV2
-                  ? <PnLTableV2 data={dataV2}/>
-                  : <div className="card" style={{padding:40,textAlign:"center",color:"#888780"}}>Select a date range and click Run Report.</div>)
-              : (data
-                  ? <PnLTable data={data} yoy={yoy} lyData={lyData}/>
-                  : <div className="card" style={{padding:40,textAlign:"center",color:"#888780"}}>Select a date range and click Run Report.</div>)
-            }
-            {pnlVersion==="v1"&&data&&<PnLSideCards data={data}/>}
-          </div>
-        </div>
-      )}
-      {view === "cmp" && (
-        <div style={{flex:1, overflowY:"auto", padding:"16px 18px"}}>
-          {cmpData
-          ? <PnLCompare cmpData={cmpData} mp={mp} />
-          : <div className="card" style={{padding:40,textAlign:"center",color:"#888780"}}>Run report first.</div>}
-          </div>
-        )}
-    </div>
+          {loading && !detail
+            ? <Card><TableSkeleton /></Card>
+            : !detail
+              ? <Card><EmptyState /></Card>
+              : pnlVersion==="v2"
+                ? <PnLTableV2 data={dataV2}/>
+                : <PnLTable data={data} yoy={yoy} lyData={lyData}/>}
+        </TabsContent>
+
+        <TabsContent value="cmp" className="pt-4">
+          {loading && !cmpData
+            ? <Card><TableSkeleton rows={7} cols={4} /></Card>
+            : cmpData
+              ? <PnLCompare cmpData={cmpData} mp={mp} />
+              : <Card><EmptyState /></Card>}
+        </TabsContent>
+      </Tabs>
+    </PageShell>
   );
 }

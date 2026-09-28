@@ -1,135 +1,127 @@
 import React,{useState} from "react";
+import { ChevronRight } from "lucide-react";
 import {numFmt} from "../../utils/fmt";
+import { Card } from "../ui/card";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
+import { cn } from "../../lib/utils";
 
 const SECTION_KEYS={
   "SALES":"sl","RETURN INWARDS":"ri","COST OF GOODS SOLD":"co",
   "OTHER INCOME":"oi","OPERATING EXPENSES":"ep","TAXATION":"tx"
 };
 
+const TAG_COLORS = {
+  rev: "#185FA5",
+  ri: "#7B3FA0",
+  cos: "#D85A30",
+  oi: "#1D9E75",
+  ep: "#BA7517",
+  tx: "#888780",
+};
+
+// Sticky first column keeps the description visible while month columns
+// scroll horizontally — each row style below needs its own *opaque*
+// background repeated on the sticky cell (a semi-transparent bg would let
+// the scrolling columns show through underneath it).
+const STICKY = "sticky left-0 z-10 w-[260px] min-w-[260px] max-w-[260px]";
+// Total sits right after Description and is frozen with it (offset = the
+// Description column's fixed 260px width); the right edge shadow marks where
+// the scrolling month columns start.
+const TOTAL = "sticky left-[260px] z-10 min-w-[130px] border-r-2 border-border shadow-[6px_0_8px_-6px_rgba(0,0,0,0.15)]";
+
 export default function PnLTable({data,yoy,lyData}){
   const [open,setOpen]=useState({});
-  // NEW — separate expand state for individual MFRS rows (per-row
-  // dropdown), independent of the section-level open/close above.
-  // Keyed by "section-label" so each MFRS year row expands on its own.
-  const [mfrsOpen,setMfrsOpen]=useState({});
   const cols=data.month_labels;
   const toggle=k=>setOpen(p=>({...p,[k]:!p[k]}));
-  const toggleMfrs=k=>setMfrsOpen(p=>({...p,[k]:!p[k]}));
   const anyOpen=Object.values(open).some(Boolean);
 
   return(
-    <div className="card">
-      <div className="card-hdr">
-        <div className="card-title">Profit &amp; Loss — Detail</div>
-        <div className="card-sub" style={{marginLeft:"auto"}}>{cols[0]}–{cols[cols.length-1]} · {cols.length} months</div>
+    <Card className="overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-[18px] pb-2.5 pt-3.5">
+        <h3 className="text-base font-semibold">Profit &amp; Loss — Detail</h3>
+        <p className="whitespace-nowrap text-xs text-muted-foreground">{cols[0]}–{cols[cols.length-1]} · {cols.length} months</p>
       </div>
-      <div className="expand-bar" onClick={()=>{
-        const all=!anyOpen; const nxt={};
-        Object.values(SECTION_KEYS).forEach(k=>{nxt[k]=all;}); setOpen(nxt);
-      }}>
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#185FA5" strokeWidth="1.5"
-          style={{transition:"transform .15s",transform:anyOpen?"rotate(180deg)":"none"}}>
-          <path d="M2 4l4 4 4-4"/>
-        </svg>
+      <div
+        className="flex cursor-pointer select-none items-center gap-1.5 px-4 pb-2 text-[12px] font-medium text-primary"
+        onClick={()=>{
+          const all=!anyOpen; const nxt={};
+          Object.values(SECTION_KEYS).forEach(k=>{nxt[k]=all;}); setOpen(nxt);
+        }}
+      >
+        <ChevronRight className={cn("h-3 w-3 transition-transform", anyOpen && "rotate-90")} />
         <span>{anyOpen?"Collapse all sections":"Expand all sections"}</span>
       </div>
-      <div className="pnl-scroll">
-        <table style={{width:"100%",borderCollapse:"collapse",minWidth:300}}>
-          <thead>
-            <tr style={{background:"#fafaf8"}}>
-              <th style={{padding:"7px 10px",fontSize:10,fontWeight:700,color:"#888780",letterSpacing:".05em",textTransform:"uppercase",borderBottom:"1px solid #e8e7e0",textAlign:"left"}}>Description</th>
-              {cols.map(c=><th key={c} style={{padding:"7px 10px",fontSize:10,fontWeight:700,color:"#888780",letterSpacing:".05em",textTransform:"uppercase",borderBottom:"1px solid #e8e7e0",textAlign:"right"}}>{c}</th>)}
-              <th style={{padding:"7px 10px",fontSize:10,fontWeight:700,color:"#888780",letterSpacing:".05em",textTransform:"uppercase",borderBottom:"1px solid #e8e7e0",textAlign:"right"}}>Total</th>
-                {yoy&&lyData&&<th style={{padding:"7px 10px",fontSize:10,fontWeight:700,color:"#888780",letterSpacing:".05em",textTransform:"uppercase",borderBottom:"1px solid #e8e7e0",textAlign:"right",whiteSpace:"nowrap"}}>YoY %</th>}
-            </tr>
-          </thead>
-          <tbody>
+      <div className="overflow-x-auto">
+        <Table className="min-w-[300px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className={cn(STICKY, "z-20 bg-card text-left")}>Description</TableHead>
+              <TableHead className={cn(TOTAL, "z-20 bg-card text-right")}>Total</TableHead>
+              {cols.map(c=><TableHead key={c} className="text-right">{c}</TableHead>)}
+              {yoy&&lyData&&<TableHead className="whitespace-nowrap text-right">YoY %</TableHead>}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {data.rows.map((r,i)=>{
               const k=SECTION_KEYS[r.section]||r.section.toLowerCase().replace(/[ /]/g,"_");
               const isOpen=open[k];
               if(r.row_type==="subtotal"){
                 return(
                   <React.Fragment key={i}>
-                    <tr className="sec-row" onClick={()=>toggle(k)}>
-                      <td><span className={"chev"+(isOpen?" op":"")} style={{fontSize:11,color:"#888780",marginRight:6,display:"inline-block",transition:"transform .15s"}}>&#9658;</span>
-                        {r.tag&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:2,color:"#fff",fontWeight:700,marginRight:5,background:
-                          r.tag==="rev" ? "#185FA5" :
-                          r.tag==="ri"  ? "#7B3FA0" :
-                          r.tag==="cos" ? "#D85A30" :
-                          r.tag==="oi"  ? "#1D9E75" :
-                          r.tag==="ep"  ? "#BA7517" :
-                          r.tag==="tx"  ? "#888780" : "#444"
-                        }}>{r.tag==="ri"?"RI":r.tag.toUpperCase()}</span>}
+                    <TableRow className="cursor-pointer bg-muted/60 hover:bg-muted" onClick={()=>toggle(k)}>
+                      <TableCell className={cn(STICKY, "bg-[hsl(var(--muted))] font-semibold")}>
+                        <ChevronRight className={cn("mr-1.5 inline-block h-3 w-3 text-muted-foreground transition-transform", isOpen && "rotate-90")} />
+                        {r.tag&&<span className="mr-1.5 rounded-[2px] px-1.5 py-px text-[10px] font-bold text-white" style={{background:TAG_COLORS[r.tag]||"#444"}}>{r.tag==="ri"?"RI":r.tag.toUpperCase()}</span>}
                         {r.label}
-                      </td>
-                      {r.months.map((v,j)=><td key={j} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12,fontWeight:600}} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
-                      <td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12,fontWeight:600}} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
-                          {yoy&&lyData&&(()=>{const ly=lyData.rows.find(lr=>lr.section===r.section&&lr.row_type===r.row_type);const lyVal=ly?Number(ly.total??0):0;const cur=Number(r.total??0);if(!lyVal)return<td className="tr mono muted">—</td>;const pct=((cur-lyVal)/Math.abs(lyVal)*100).toFixed(1);const pos=parseFloat(pct)>=0;return<td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:11,color:pos?"#1D9E75":"#c0392b",fontWeight:600}}>{pos?"+":""}{pct}%</td>;})()}
-                              </tr>
-                            </React.Fragment>
+                      </TableCell>
+                      <TableCell className={cn(TOTAL, "bg-[hsl(var(--muted))]", "text-right font-mono text-xs font-semibold")} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
+                      {r.months.map((v,j)=><TableCell key={j} className="text-right font-mono text-xs font-semibold" dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
+                      {yoy&&lyData&&(()=>{const ly=lyData.rows.find(lr=>lr.section===r.section&&lr.row_type===r.row_type);const lyVal=ly?Number(ly.total??0):0;const cur=Number(r.total??0);if(!lyVal)return<TableCell className="text-right font-mono text-muted-foreground">—</TableCell>;const pct=((cur-lyVal)/Math.abs(lyVal)*100).toFixed(1);const pos=parseFloat(pct)>=0;return<TableCell className={cn("text-right font-mono text-[12px] font-semibold",pos?"text-success":"text-destructive")}>{pos?"+":""}{pct}%</TableCell>;})()}
+                    </TableRow>
+                  </React.Fragment>
                 );
               }
               if((r.row_type==="detail"||r.row_type==="mfrs")&&!isOpen) return null;
               if(r.row_type==="detail"||r.row_type==="mfrs"){
                 const isMfrs=r.row_type==="mfrs";
-                // NEW — MFRS rows with children can expand to show their
-                // per-account breakdown. Plain detail rows never have
-                // children, so hasKids is always false for those.
-                const mfrsKey=k+"-"+r.label;
-                const hasKids=isMfrs && r.children && r.children.length>0;
-                const kidsOpen=!!mfrsOpen[mfrsKey];
                 return(
-                  <React.Fragment key={i}>
-                    <tr className="det-row" style={isMfrs?{background:"#fafaf8",cursor:hasKids?"pointer":"default"}:{}}
-                      onClick={hasKids?()=>toggleMfrs(mfrsKey):undefined}>
-                      <td style={{paddingLeft:24,fontSize:10,color:isMfrs?"#5f5e5a":"#1a1a18"}}>
-                        {hasKids&&<span className={"chev"+(kidsOpen?" op":"")} style={{fontSize:9,color:"#888780",marginRight:5,display:"inline-block",transition:"transform .15s"}}>&#9658;</span>}
-                        {isMfrs&&<span style={{fontSize:8,padding:"1px 5px",borderRadius:2,background:"#BA7517",color:"#fff",fontWeight:700,marginRight:5}}>MFRS</span>}
-                        {r.label}
-                      </td>
-                      {r.months.map((v,j)=><td key={j} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:11,color:isMfrs?"#888780":"#1a1a18"}} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
-                      <td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:11,color:isMfrs?"#888780":"#1a1a18"}} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
-                    </tr>
-                    {hasKids&&kidsOpen&&r.children.map((child,ci)=>(
-                      <tr key={i+"-"+ci} className="det-row" style={{background:"#fdfaf3"}}>
-                        <td style={{paddingLeft:44,fontSize:10,color:"#888780"}}>
-                          <span style={{fontSize:8,padding:"1px 5px",borderRadius:2,background:"#E8DFC8",color:"#7A6A00",fontWeight:700,marginRight:5}}>{child.acc_no||"—"}</span>
-                          {child.label}
-                        </td>
-                        {child.months.map((v,j)=><td key={j} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:10,color:"#888780"}} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
-                        <td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:10,color:"#888780"}} dangerouslySetInnerHTML={{__html:numFmt(Number(child.total))}}/>
-                      </tr>
-                    ))}
-                  </React.Fragment>
+                  <TableRow key={i} className={isMfrs?"bg-muted/40":undefined}>
+                    <TableCell className={cn(STICKY, isMfrs?"bg-[hsl(var(--muted))]":"bg-card", "pl-6 text-[11px]", isMfrs?"text-muted-foreground":"text-foreground")}>
+                      {isMfrs&&<span className="mr-1.5 rounded-[2px] bg-warning px-1.5 py-px text-[10px] font-bold text-white">MFRS</span>}
+                      {r.label}
+                    </TableCell>
+                    <TableCell className={cn(TOTAL, isMfrs?"bg-[hsl(var(--muted))]":"bg-card", "text-right font-mono text-[12px]", isMfrs?"text-muted-foreground":"text-foreground")} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
+                    {r.months.map((v,j)=><TableCell key={j} className={cn("text-right font-mono text-[12px]", isMfrs?"text-muted-foreground":"text-foreground")} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
+                  </TableRow>
                 );
               }
               if(r.row_type==="net_sales") return(
-                <tr key={i} className="sub-row">
-                  <td>{r.label}</td>
-                  {r.months.map((v,j)=><td key={j} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12,fontWeight:600}} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
-                  <td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12,fontWeight:600}} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
-                      {yoy&&lyData&&(()=>{const ly=lyData.rows.find(lr=>lr.row_type==="net_sales");const lyVal=ly?Number(ly.total??0):0;const cur=Number(r.total??0);if(!lyVal)return<td className="tr mono muted">—</td>;const pct=((cur-lyVal)/Math.abs(lyVal)*100).toFixed(1);const pos=parseFloat(pct)>=0;return<td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:11,color:pos?"#1D9E75":"#c0392b",fontWeight:600}}>{pos?"+":""}{pct}%</td>;})()}
-                      </tr>
-                      );
-                if(r.row_type==="summary"){
-                const col=r.section==="NET_PROFIT_BEFORE"?"#7F77DD":r.section==="NET_PROFIT_AFTER"?"#185FA5":"#1D9E75";
+                <TableRow key={i} className="bg-muted/40 font-semibold">
+                  <TableCell className={cn(STICKY, "bg-[hsl(var(--muted))]")}>{r.label}</TableCell>
+                  <TableCell className={cn(TOTAL, "bg-[hsl(var(--muted))]", "text-right font-mono text-xs font-semibold")} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
+                  {r.months.map((v,j)=><TableCell key={j} className="text-right font-mono text-xs font-semibold" dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
+                  {yoy&&lyData&&(()=>{const ly=lyData.rows.find(lr=>lr.row_type==="net_sales");const lyVal=ly?Number(ly.total??0):0;const cur=Number(r.total??0);if(!lyVal)return<TableCell className="text-right font-mono text-muted-foreground">—</TableCell>;const pct=((cur-lyVal)/Math.abs(lyVal)*100).toFixed(1);const pos=parseFloat(pct)>=0;return<TableCell className={cn("text-right font-mono text-[12px] font-semibold",pos?"text-success":"text-destructive")}>{pos?"+":""}{pct}%</TableCell>;})()}
+                </TableRow>
+              );
+              if(r.row_type==="summary"){
+                const tone=r.section==="NET_PROFIT_BEFORE"?"text-[#7F77DD]":r.section==="NET_PROFIT_AFTER"?"text-primary":"text-success";
                 return(
-                  <tr key={i} className="sum-row">
-                    <td style={{fontWeight:700,color:col}}>{r.label}</td>
-                    {r.months.map((v,j)=><td key={j} style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12,fontWeight:700,color:col}} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
-                    <td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12,fontWeight:700,color:col}} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
-                        {yoy&&lyData&&(()=>{const ly=lyData.rows.find(lr=>lr.section===r.section&&lr.row_type==="summary");const lyVal=ly?Number(ly.total??0):0;const cur=Number(r.total??0);if(!lyVal)return<td className="tr mono muted">—</td>;const pct=((cur-lyVal)/Math.abs(lyVal)*100).toFixed(1);const pos=parseFloat(pct)>=0;return<td style={{textAlign:"right",fontFamily:"Courier New,monospace",fontSize:12,fontWeight:700,color:pos?"#1D9E75":"#c0392b"}}>{pos?"+":""}{pct}%</td>;})()}
-                        </tr>
-                        );
-                        }
-                    return null;
+                  <TableRow key={i} className="border-y-2 border-primary/20 bg-accent">
+                    <TableCell className={cn(STICKY, "bg-[hsl(var(--accent))] font-bold", tone)}>{r.label}</TableCell>
+                    <TableCell className={cn(TOTAL, "bg-[hsl(var(--accent))]", "text-right font-mono text-xs font-bold", tone)} dangerouslySetInnerHTML={{__html:numFmt(Number(r.total))}}/>
+                    {r.months.map((v,j)=><TableCell key={j} className={cn("text-right font-mono text-xs font-bold", tone)} dangerouslySetInnerHTML={{__html:numFmt(Number(v))}}/>)}
+                    {yoy&&lyData&&(()=>{const ly=lyData.rows.find(lr=>lr.section===r.section&&lr.row_type==="summary");const lyVal=ly?Number(ly.total??0):0;const cur=Number(r.total??0);if(!lyVal)return<TableCell className="text-right font-mono text-muted-foreground">—</TableCell>;const pct=((cur-lyVal)/Math.abs(lyVal)*100).toFixed(1);const pos=parseFloat(pct)>=0;return<TableCell className={cn("text-right font-mono text-xs font-bold",pos?"text-success":"text-destructive")}>{pos?"+":""}{pct}%</TableCell>;})()}
+                  </TableRow>
+                );
+              }
+              return null;
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-      <div style={{padding:"6px 13px",background:"#fafaf8",borderTop:"1px solid #e8e7e0",fontSize:9,color:"#888780"}}>
+      <div className="px-4 py-2.5 text-[11px] text-muted-foreground">
         QM · MYR · MFRS 15 basis · {cols.length} month columns
       </div>
-    </div>
+    </Card>
   );
 }

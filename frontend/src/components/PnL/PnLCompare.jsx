@@ -1,5 +1,8 @@
 import React, { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { MN } from "../../utils/fmt";
+import { Card } from "../ui/card";
+import { cn } from "../../lib/utils";
 
 export default function PnLCompare({ cmpData, mp }) {
   const [histOpen, setHistOpen] = useState(true);
@@ -25,7 +28,7 @@ export default function PnLCompare({ cmpData, mp }) {
   const yoy = (cur, prior) => {
     if (!prior || prior === 0) return null;
     const pct = ((cur - prior) / Math.abs(prior)) * 100;
-    return { pct, color: pct >= 0 ? "#1D9E75" : "#c0392b", label: (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%" };
+    return { pct, pos: pct >= 0, label: (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%" };
   };
 
   const aLabel  = `${MN[mp.s.fromMonth]} ${MN[mp.s.toMonth]} ${mp.s.fromYear}`;
@@ -42,21 +45,23 @@ export default function PnLCompare({ cmpData, mp }) {
     { key: "pat",  label: "Net Profit After Tax",   section: "NET_PROFIT_AFTER",   rt: "summary",  isSum: true  },
   ];
 
+  const histTh = "min-w-[96px] border-b border-l border-border bg-card px-3.5 py-2.5 text-right text-[12.5px] font-bold text-muted-foreground";
+  const histTd = "border-b border-l border-border/70 bg-muted/30 px-3.5 py-1.5 text-right font-mono text-xs text-muted-foreground";
+
   return (
-    <div className="card" style={{ overflow: "hidden", marginBottom: 0 }}>
-      <div className="tv-scroll">
-        <table className="tv-table">
+    <Card className="mb-0 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse whitespace-nowrap text-xs">
           <thead>
             <tr>
-              <th className="tv-th-desc">Description</th>
-              <th className="tv-th-toggle"
-                onClick={() => setHistOpen(!histOpen)}
-                style={{ padding: "4px 8px", cursor: "pointer", textAlign: "center", borderLeft: "1px solid #e8e7e0", borderBottom: "1px solid #e8e7e0" }}>
-                <span style={{ fontSize: 10, color: "#185FA5", fontWeight: 700 }}>{histOpen ? "◀" : "▶"}</span>
+              <th className="sticky left-0 z-[4] min-w-[180px] border-b border-r border-border bg-card px-4 py-2.5 text-left text-[12.5px] font-bold text-muted-foreground">Description</th>
+              <th className="cursor-pointer border-b border-l border-border bg-card px-2 py-1 text-center"
+                onClick={() => setHistOpen(!histOpen)}>
+                <span className="text-[11px] font-bold text-primary">{histOpen ? "◀" : "▶"}</span>
               </th>
-              <th className={"tv-th-num tv-th-prior tv-hist" + (histOpen ? " show" : "")}>{fyLabel}</th>
-              <th className={"tv-th-num tv-th-prior tv-hist" + (histOpen ? " show" : "")}>{pyLabel}</th>
-              <th className="tv-th-num tv-th-active">{aLabel}</th>
+              <th className={cn(histTh, !histOpen && "hidden")}>{fyLabel}</th>
+              <th className={cn(histTh, !histOpen && "hidden")}>{pyLabel}</th>
+              <th className="min-w-[96px] border-b border-l-2 border-primary bg-primary px-3.5 py-2.5 text-right text-[12.5px] font-bold text-primary-foreground">{aLabel}</th>
             </tr>
           </thead>
           <tbody>
@@ -79,23 +84,23 @@ export default function PnLCompare({ cmpData, mp }) {
 
               return (
                 <React.Fragment key={r.key}>
-                  <tr className={r.isSum ? "tv-sec-sum" : "tv-sec-row"}
+                  <tr className={cn("cursor-pointer bg-muted/60 hover:bg-muted/80", r.isSum && "cursor-default bg-accent hover:bg-accent")}
                     onClick={() => !r.isSum && setExpandState(p => ({ ...p, [r.key]: !p[r.key] }))}>
                     {r.isSum ? (
-                      <td className="tv-td-sum">
+                      <td className="sticky left-0 z-[2] border-b border-t-2 border-r border-primary/20 bg-accent px-3.5 pb-1 pt-2.5 text-xs font-bold text-primary">
                         {r.label}
-                        {yoyPy && <><br /><span style={{ fontSize: 10, color: yoyPy.color, fontWeight: 600 }}>YoY {yoyPy.label}</span></>}
+                        {yoyPy && <><br /><span className={cn("text-[11px] font-semibold", yoyPy.pos ? "text-success" : "text-destructive")}>YoY {yoyPy.label}</span></>}
                       </td>
                     ) : (
-                      <td className="tv-td-desc">
-                        <span style={{ fontSize: 10, color: "#b4b2a9", marginRight: 6, display: "inline-block", transition: "transform .15s", transform: isEx ? "rotate(90deg)" : "none" }}>▶</span>
+                      <td className="sticky left-0 z-[2] border-b border-r border-border bg-card px-3.5 pb-1 pt-2.5 text-xs font-semibold">
+                        <ChevronRight className={cn("mr-1.5 inline-block h-2.5 w-2.5 text-muted-foreground transition-transform", isEx && "rotate-90")} />
                         {r.label}
                       </td>
                     )}
-                    <td className="tv-td-toggle" />
-                    <td className={"tv-td-num tv-td-prior tv-hist" + (histOpen ? " show" : "") + (r.isSum ? " tv-sum-num" : "")}>{fmt(aFy)}</td>
-                    <td className={"tv-td-num tv-td-prior tv-hist" + (histOpen ? " show" : "") + (r.isSum ? " tv-sum-num" : "")}>{fmt(aPy)}</td>
-                    <td className={"tv-td-num tv-td-active" + (r.isSum ? " tv-sum-num" : "")}>{fmt(aCur)}</td>
+                    <td className="border-b border-l border-border bg-muted/40" />
+                    <td className={cn(histTd, r.isSum && "border-t-2 border-primary/20 bg-accent font-bold", !histOpen && "hidden")}>{fmt(aFy)}</td>
+                    <td className={cn(histTd, r.isSum && "border-t-2 border-primary/20 bg-accent font-bold", !histOpen && "hidden")}>{fmt(aPy)}</td>
+                    <td className={cn("border-b border-l-2 border-primary bg-accent px-3.5 py-1.5 text-right font-mono text-xs font-semibold text-primary", r.isSum && "border-t-2 font-bold")}>{fmt(aCur)}</td>
                   </tr>
                   {allLabels.map((lbl, i) => {
                     const da = detsActive.find(d => d.label === lbl);
@@ -105,12 +110,12 @@ export default function PnLCompare({ cmpData, mp }) {
                     const vp = dp ? dp.months.reduce((a, b) => a + (Number(b) || 0), 0) : 0;
                     const vf = df ? df.months.reduce((a, b) => a + (Number(b) || 0), 0) : 0;
                     return (
-                      <tr key={i} className={"tv-row-det" + (isEx ? " show" : "")}>
-                        <td className="tv-td-det">{lbl}</td>
-                        <td className="tv-td-toggle" />
-                        <td className={"tv-td-num tv-td-prior tv-hist" + (histOpen ? " show" : "") + " tv-muted"}>{vf !== 0 ? fmt(vf) : "—"}</td>
-                        <td className={"tv-td-num tv-td-prior tv-hist" + (histOpen ? " show" : "") + " tv-muted"}>{vp !== 0 ? fmt(vp) : "—"}</td>
-                        <td className="tv-td-num tv-td-active">{va !== 0 ? fmt(va) : "—"}</td>
+                      <tr key={i} className={cn(!isEx && "hidden")}>
+                        <td className="sticky left-0 z-[2] border-b border-r border-border bg-[hsl(var(--muted))] py-1.5 pl-7 pr-3 text-[12px] text-muted-foreground">{lbl}</td>
+                        <td className="border-b border-l border-border bg-muted/40" />
+                        <td className={cn(histTd, "text-muted-foreground/50", !histOpen && "hidden")}>{vf !== 0 ? fmt(vf) : "—"}</td>
+                        <td className={cn(histTd, "text-muted-foreground/50", !histOpen && "hidden")}>{vp !== 0 ? fmt(vp) : "—"}</td>
+                        <td className="border-b border-l-2 border-primary bg-accent px-3.5 py-1.5 text-right font-mono text-xs text-primary">{va !== 0 ? fmt(va) : "—"}</td>
                       </tr>
                     );
                   })}
@@ -120,10 +125,10 @@ export default function PnLCompare({ cmpData, mp }) {
           </tbody>
         </table>
       </div>
-      <div className="tv-foot">
+      <div className="flex flex-col gap-1 px-4 py-2.5 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:gap-2">
         <span>QM · MYR · Active: {aLabel} vs {pyLabel} (prior year)</span>
         <span>▶ click row to expand details · ◀/▶ to show/hide prior columns</span>
       </div>
-    </div>
+    </Card>
   );
 }

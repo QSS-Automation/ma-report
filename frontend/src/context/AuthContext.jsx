@@ -19,8 +19,55 @@ export function AuthProvider({ children }) {
   // (not found / inactive in ops_QM.users) — distinct from "haven't
   // resolved auth yet", so we don't show Access Denied prematurely.
   const [denied, setDenied] = useState(false);
+  // Local-dev-bypass-only: set when REACT_APP_DEV_USER_ID's lookup fails
+  // for a reason other than "denied" (e.g. the backend/DB is unreachable),
+  // so App.jsx can show what's actually wrong instead of silently falling
+  // back to a Login screen whose "Sign in with Microsoft" button can't
+  // work locally anyway (no localhost redirect URI registered in Azure AD).
+  const [devError, setDevError] = useState("");
 
   useEffect(() => {
+
+    // ── Local dev UI-review bypass — NEVER set in production ──
+    // Skips the backend entirely (no /api/auth/me call) so the app shell
+    // and tab layouts can be reviewed even while the database is
+    // unreachable. Only for visually checking the redesign — any data a
+    // tab fetches from the API will still fail until the DB is reachable.
+    if (process.env.REACT_APP_DEV_FAKE_USER) {
+      setUser({ user_id: "dev@local", display_name: "Local Dev", role: "admin" });
+      setCurrentUserId("dev@local");
+      setLoading(false);
+      return;
+    }
+
+    // ── Local dev bypass — NEVER set in production ───────────
+    // Azure AD's app registration only allows redirecting back to the
+    // production Static Web App URL (the localhost redirect URI was
+    // removed on go-live), so the interactive MSAL flow can never
+    // complete on a local dev server regardless of client/tenant ID.
+    // When REACT_APP_DEV_USER_ID is present (only in a developer's own
+    // untracked local frontend/.env — the real Azure Static Web App env
+    // vars never define it), skip Teams/MSAL entirely and resolve the
+    // user directly, exactly like the post-login lookup below does.
+    const devUserId = process.env.REACT_APP_DEV_USER_ID;
+    if (devUserId) {
+      API.get("/api/auth/me", { params: { user_id: devUserId } })
+        .then(r => { setUser(r.data); setCurrentUserId(r.data.user_id); })
+        .catch(e => {
+          if (e?.response?.status === 403) {
+            setDenied(true);
+          } else {
+            setDevError(
+              `Could not look up "${devUserId}": ` +
+              (e?.response?.data?.detail || e?.message || String(e))
+            );
+          }
+          setUser(null);
+          clearCurrentUserId();
+        })
+        .finally(() => setLoading(false));
+      return;
+    }
 
     // ── Teams — check sessionStorage first ───────────────────
     const cached = sessionStorage.getItem("teams_user");
@@ -92,7 +139,7 @@ export function AuthProvider({ children }) {
   }, [accounts]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, denied }}>
+    <AuthContext.Provider value={{ user, loading, denied, devError }}>
       {children}
     </AuthContext.Provider>
   );

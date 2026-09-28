@@ -1,5 +1,19 @@
 import React, { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { numFmt } from "../../utils/fmt";
+import { Card } from "../ui/card";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
+import { cn } from "../../lib/utils";
+
+// Sticky first column keeps the description visible while month columns
+// scroll horizontally — each row style below needs its own *opaque*
+// background repeated on the sticky cell (a semi-transparent bg would let
+// the scrolling columns show through underneath it).
+const STICKY = "sticky left-0 z-10 w-[260px] min-w-[260px] max-w-[260px]";
+// Total sits right after Description and is frozen with it (offset = the
+// Description column's fixed 260px width); the right edge shadow marks where
+// the scrolling month columns start.
+const TOTAL = "sticky left-[260px] z-10 min-w-[130px] border-r-2 border-border shadow-[6px_0_8px_-6px_rgba(0,0,0,0.15)]";
 
 // Recursively renders one row + its children (if expanded). Handles
 // arbitrary nesting depth: top-level tag rows -> account details,
@@ -11,52 +25,46 @@ function Row({ row, depth, path, open, toggle, cols }) {
   const isSummary = row.row_type === "summary";
   const isMfrs = row.row_type === "mfrs";
 
-  const indent = 10 + depth * 16;
+  const indentClass = depth === 0 ? "pl-2.5" : depth === 1 ? "pl-[26px]" : depth === 2 ? "pl-[42px]" : "pl-[58px]";
 
   if (isSummary) {
-    const col = row.section === "NET_PROFIT_BEFORE" ? "#7F77DD"
-      : row.section === "NET_PROFIT_AFTER" ? "#185FA5" : "#1D9E75";
+    const tone = row.section === "NET_PROFIT_BEFORE" ? "text-[#7F77DD]"
+      : row.section === "NET_PROFIT_AFTER" ? "text-primary" : "text-success";
     return (
-      <tr className="sum-row">
-        <td style={{ fontWeight: 700, color: col, paddingLeft: indent }}>{row.label}</td>
+      <TableRow className="border-y-2 border-primary/20 bg-accent">
+        <TableCell className={cn(STICKY, "bg-[hsl(var(--accent))] font-bold", indentClass, tone)}>{row.label}</TableCell>
+        <TableCell className={cn(TOTAL, "bg-[hsl(var(--accent))]", "text-right font-mono text-xs font-bold", tone)}
+          dangerouslySetInnerHTML={{ __html: numFmt(Number(row.total)) }} />
         {row.months.map((v, j) => (
-          <td key={j} style={{ textAlign: "right", fontFamily: "Courier New,monospace", fontSize: 12, fontWeight: 700, color: col }}
+          <TableCell key={j} className={cn("text-right font-mono text-xs font-bold", tone)}
             dangerouslySetInnerHTML={{ __html: numFmt(Number(v)) }} />
         ))}
-        <td style={{ textAlign: "right", fontFamily: "Courier New,monospace", fontSize: 12, fontWeight: 700, color: col }}
-          dangerouslySetInnerHTML={{ __html: numFmt(Number(row.total)) }} />
-      </tr>
+      </TableRow>
     );
   }
 
   return (
     <React.Fragment>
-      <tr
-        className={hasChildren ? "sec-row" : "det-row"}
-        style={{ cursor: hasChildren ? "pointer" : "default", background: isMfrs ? "#fafaf8" : undefined }}
+      <TableRow
+        className={cn(hasChildren ? "cursor-pointer bg-muted/60 hover:bg-muted" : undefined, isMfrs && "bg-muted/40")}
         onClick={() => hasChildren && toggle(path)}
       >
-        <td style={{ paddingLeft: indent, fontSize: depth === 0 ? 12 : 11, fontWeight: depth === 0 ? 600 : 400 }}>
+        <TableCell className={cn(STICKY, (isMfrs || hasChildren) ? "bg-[hsl(var(--muted))]" : "bg-card", indentClass, depth === 0 ? "text-xs font-semibold" : "text-[12px] font-normal")}>
           {hasChildren && (
-            <span className={"chev" + (isOpen ? " op" : "")}
-              style={{ fontSize: 10, color: "#888780", marginRight: 6, display: "inline-block", transition: "transform .15s" }}>
-              &#9658;
-            </span>
+            <ChevronRight className={cn("mr-1.5 inline-block h-2.5 w-2.5 text-muted-foreground transition-transform", isOpen && "rotate-90")} />
           )}
           {isMfrs && (
-            <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 2, background: "#BA7517", color: "#fff", fontWeight: 700, marginRight: 5 }}>
-              MFRS
-            </span>
+            <span className="mr-1.5 rounded-[2px] bg-warning px-1.5 py-px text-[10px] font-bold text-white">MFRS</span>
           )}
           {row.label}
-        </td>
+        </TableCell>
+        <TableCell className={cn(TOTAL, (isMfrs || hasChildren) ? "bg-[hsl(var(--muted))]" : "bg-card", "text-right font-mono", depth === 0 ? "text-xs font-semibold" : "text-[12px] font-normal", isMfrs ? "text-muted-foreground" : "text-foreground")}
+          dangerouslySetInnerHTML={{ __html: numFmt(Number(row.total)) }} />
         {row.months.map((v, j) => (
-          <td key={j} style={{ textAlign: "right", fontFamily: "Courier New,monospace", fontSize: depth === 0 ? 12 : 11, fontWeight: depth === 0 ? 600 : 400, color: isMfrs ? "#888780" : "#1a1a18" }}
+          <TableCell key={j} className={cn("text-right font-mono", depth === 0 ? "text-xs font-semibold" : "text-[12px] font-normal", isMfrs ? "text-muted-foreground" : "text-foreground")}
             dangerouslySetInnerHTML={{ __html: numFmt(Number(v)) }} />
         ))}
-        <td style={{ textAlign: "right", fontFamily: "Courier New,monospace", fontSize: depth === 0 ? 12 : 11, fontWeight: depth === 0 ? 600 : 400, color: isMfrs ? "#888780" : "#1a1a18" }}
-          dangerouslySetInnerHTML={{ __html: numFmt(Number(row.total)) }} />
-      </tr>
+      </TableRow>
       {hasChildren && isOpen && row.children.map((child, i) => (
         <Row key={path + "." + i} row={child} depth={depth + 1} path={path + "." + i}
           open={open} toggle={toggle} cols={cols} />
@@ -89,39 +97,39 @@ export default function PnLTableV2({ data }) {
   };
 
   return (
-    <div className="card">
-      <div className="card-hdr">
-        <div className="card-title">Profit &amp; Loss — Detail (New)</div>
-        <div className="card-sub" style={{ marginLeft: "auto" }}>{cols[0]}–{cols[cols.length - 1]} · {cols.length} months</div>
+    <Card className="overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-[18px] pb-2.5 pt-3.5">
+        <h3 className="text-base font-semibold">Profit &amp; Loss — Detail (New)</h3>
+        <p className="whitespace-nowrap text-xs text-muted-foreground">{cols[0]}–{cols[cols.length - 1]} · {cols.length} months</p>
       </div>
-      <div className="expand-bar" onClick={expandAll}>
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#185FA5" strokeWidth="1.5"
-          style={{ transition: "transform .15s", transform: anyOpen ? "rotate(180deg)" : "none" }}>
-          <path d="M2 4l4 4 4-4" />
-        </svg>
+      <div
+        className="flex cursor-pointer select-none items-center gap-1.5 px-4 pb-2 text-[12px] font-medium text-primary"
+        onClick={expandAll}
+      >
+        <ChevronRight className={cn("h-3 w-3 transition-transform", anyOpen && "rotate-90")} />
         <span>{anyOpen ? "Collapse all" : "Expand all"}</span>
       </div>
-      <div className="pnl-scroll">
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 300 }}>
-          <thead>
-            <tr style={{ background: "#fafaf8" }}>
-              <th style={{ padding: "7px 10px", fontSize: 10, fontWeight: 700, color: "#888780", letterSpacing: ".05em", textTransform: "uppercase", borderBottom: "1px solid #e8e7e0", textAlign: "left" }}>Description</th>
+      <div className="overflow-x-auto">
+        <Table className="min-w-[300px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className={cn(STICKY, "z-20 bg-card text-left")}>Description</TableHead>
+              <TableHead className={cn(TOTAL, "z-20 bg-card text-right")}>Total</TableHead>
               {cols.map(c => (
-                <th key={c} style={{ padding: "7px 10px", fontSize: 10, fontWeight: 700, color: "#888780", letterSpacing: ".05em", textTransform: "uppercase", borderBottom: "1px solid #e8e7e0", textAlign: "right" }}>{c}</th>
+                <TableHead key={c} className="text-right">{c}</TableHead>
               ))}
-              <th style={{ padding: "7px 10px", fontSize: 10, fontWeight: 700, color: "#888780", letterSpacing: ".05em", textTransform: "uppercase", borderBottom: "1px solid #e8e7e0", textAlign: "right" }}>Total</th>
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {data.rows.map((row, i) => (
               <Row key={"root." + i} row={row} depth={0} path={"root." + i} open={open} toggle={toggle} cols={cols} />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-      <div style={{ padding: "6px 13px", background: "#fafaf8", borderTop: "1px solid #e8e7e0", fontSize: 9, color: "#888780" }}>
+      <div className="px-4 py-2.5 text-[11px] text-muted-foreground">
         MYR · MFRS 15 basis · {cols.length} month columns · New category structure (Beta)
       </div>
-    </div>
+    </Card>
   );
 }

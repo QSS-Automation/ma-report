@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import { useMsal } from "@azure/msal-react";
+import { Loader2 } from "lucide-react";
 import { loginRequest } from "../../auth/msalConfig";
 import API from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
+import { Card } from "../ui/card";
+import { Button } from "../ui/button";
 
 const isInTeams = () =>
   window.parent !== window ||
@@ -69,43 +72,35 @@ export default function Login() {
   };
 
   if(inTeams && loading) return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",
-        height:"100vh",color:"#888780",fontSize:13}}>
+    <div className="flex h-screen items-center justify-center bg-background text-[14px] text-muted-foreground">
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
       Signing in with Teams…
     </div>
   );
 
   return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",
-        height:"100vh",background:"#0d1117"}}>
-      <div style={{textAlign:"center"}}>
-        <div style={{fontSize:32,fontWeight:700,color:"#e6edf3",marginBottom:8}}>
+    <div className="flex h-screen items-center justify-center bg-background p-6">
+      <Card className="w-full max-w-sm rounded-lg border-border bg-card p-8 text-center shadow-lg">
+        <div className="mb-2 text-[28px] font-bold text-foreground">
           Quandatics MA
         </div>
-        <div style={{color:"#8b949e",marginBottom:32,fontSize:13}}>
+        <div className="mb-8 text-[14px] text-muted-foreground">
           Management Accounting Report
         </div>
         {error&&(
-          <div style={{color:"#F09595",fontSize:12,marginBottom:16,
-              background:"#2d1515",padding:"8px 16px",borderRadius:6}}>
+          <div className="mb-4 rounded-md bg-destructive/10 px-4 py-2 text-xs text-destructive">
             {error}
           </div>
         )}
-        <button
+        <Button
           onClick={handleLogin}
           disabled={loading}
-          style={{
-            display:"flex",alignItems:"center",gap:10,
-            background: loading?"#0f3d6b":"#185FA5",
-            color:"#fff",border:"none",
-            padding:"12px 24px",borderRadius:8,fontSize:14,
-            fontWeight:600,cursor: loading?"not-allowed":"pointer",
-            margin:"0 auto",opacity: loading?0.7:1,
-            transition:"all .15s"
-          }}>
+          className="mx-auto flex h-auto items-center gap-2.5 rounded-lg px-6 py-3 text-sm font-semibold"
+        >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           {loading?"Signing in…":"Sign in with Microsoft"}
-        </button>
-      </div>
+        </Button>
+      </Card>
     </div>
   );
 }

@@ -2,40 +2,45 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { getOrderListEnhanced, linkPoToSo, getPendingLinks } from "../../services/api";
 import { fmtMYR } from "../../utils/fmt";
 import { showToast } from "../../utils/toast";
+import { TableSkeleton } from "../ui/skeleton";
+import { EmptyState } from "../ui/empty-state";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Card } from "../ui/card";
+import { cn } from "../../lib/utils";
 
 // ── Status badge ───────────────────────────────────────────────────────────
+const STATUS_STYLE = {
+  "Fully Paid":       "bg-success/15 text-success",
+  "Partially Paid":   "bg-warning/15 text-warning",
+  "Unpaid":           "bg-destructive/15 text-destructive",
+  "Not Billed":       "bg-muted text-muted-foreground",
+  "Invoiced":         "bg-accent text-accent-foreground",
+  "Open":             "bg-muted text-muted-foreground",
+  "Closed":           "bg-success/15 text-success",
+  "Cancelled":        "bg-secondary text-secondary-foreground",
+  "Credit Noted":     "bg-warning/15 text-warning",
+  "Fully Billed":     "bg-success/15 text-success",
+  "Partially Billed": "bg-warning/15 text-warning",
+  "Pending Sync":     "bg-warning/15 text-warning",
+};
+
 function StatusBadge({ status }) {
-  const map = {
-    "Fully Paid":      { bg: "#E8F5E9", color: "#1B5E20" },
-    "Partially Paid":  { bg: "#FFF8E1", color: "#F57F17" },
-    "Unpaid":          { bg: "#FFEBEE", color: "#B71C1C" },
-    "Not Billed":      { bg: "#F5F5F5", color: "#616161" },
-    "Invoiced":        { bg: "#E3F2FD", color: "#0D47A1" },
-    "Open":            { bg: "#F5F5F5", color: "#9E9E9E" },
-    "Closed":          { bg: "#E8F5E9", color: "#1B5E20" },
-    "Cancelled":       { bg: "#F3E5F5", color: "#4A148C" },
-    "Credit Noted":    { bg: "#FFF3E0", color: "#E65100" },
-    "Fully Billed":    { bg: "#E8F5E9", color: "#1B5E20" },
-    "Partially Billed":{ bg: "#FFF8E1", color: "#F57F17" },
-    "Pending Sync":    { bg: "#FFF3E0", color: "#E65100" },
-  };
-  const s = map[status] || { bg: "#F5F5F5", color: "#616161" };
   return (
-    <span className="bdg" style={{ background: s.bg, color: s.color, fontSize: 10 }}>
+    <Badge className={cn("text-[11px]", STATUS_STYLE[status] || "bg-muted text-muted-foreground")}>
       {status || "—"}
-    </span>
+    </Badge>
   );
 }
 
 // ── GM badge ───────────────────────────────────────────────────────────────
 function GmBadge({ pct }) {
   const n = parseFloat(pct);
-  const color = n >= 30 ? "#1B5E20" : n >= 0 ? "#F57F17" : "#B71C1C";
-  const bg    = n >= 30 ? "#E8F5E9" : n >= 0 ? "#FFF8E1" : "#FFEBEE";
+  const style = n >= 30 ? "bg-success/15 text-success" : n >= 0 ? "bg-warning/15 text-warning" : "bg-destructive/15 text-destructive";
   return (
-    <span className="bdg" style={{ background: bg, color, fontSize: 10, fontFamily: "monospace" }}>
+    <Badge className={cn("font-mono text-[11px]", style)}>
       {isNaN(n) ? "—" : `${n.toFixed(1)}%`}
-    </span>
+    </Badge>
   );
 }
 
@@ -48,19 +53,17 @@ const LEVELS = [
 
 function LevelToggle({ value, onChange }) {
   return (
-    <div style={{ display: "flex", gap: 3 }} onClick={e => e.stopPropagation()}>
+    <div className="flex gap-1" onClick={e => e.stopPropagation()}>
       {LEVELS.map(l => (
-        <button
+        <Button
           key={l.key}
+          variant="outline"
+          size="sm"
+          className={cn("h-6 px-2 text-[11px]", value === l.key && "border-primary/40 bg-accent text-primary")}
           onClick={() => onChange(l.key)}
-          className="pg-btn"
-          style={{
-            fontSize: 10, padding: "2px 8px",
-            ...(value === l.key ? { background: "var(--bg-accent)", color: "var(--text-accent)", borderColor: "var(--border-accent)" } : {}),
-          }}
         >
           {l.label}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -157,46 +160,46 @@ function PoGroup({ po, level, unlinked, soOptions, isPending, onLink, linking })
 
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12, flexWrap: "wrap" }}>
-        <span className="mono" style={{ fontWeight: 500, color: "#185FA5", flexShrink: 0 }}>{po.po_no || "—"}</span>
-        <span style={{ fontSize: 10, color: "#888780", flexShrink: 0 }}>{po.po_date ? po.po_date.slice(0, 10) : ""}</span>
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 py-1.5 text-[13px]">
+        <span className="shrink-0 font-mono font-medium text-primary">{po.po_no || "—"}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">{po.po_date ? po.po_date.slice(0, 10) : ""}</span>
         <StatusBadge status={overall} />
 
         {unlinked && isPending && <StatusBadge status="Pending Sync" />}
 
         {unlinked && !isPending && (
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }} onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
             <select
               value={selectedSo}
               onChange={e => setSelectedSo(e.target.value)}
-              style={{ fontSize: 10, padding: "2px 4px", border: "0.5px solid #e8e7e0", borderRadius: 4, background: "#fff" }}
+              className="rounded-md border border-input bg-card px-1 py-0.5 text-[11px]"
             >
               <option value="">Link to SO…</option>
               {soOptions.map(so => <option key={so} value={so}>{so}</option>)}
             </select>
-            <button
-              className="pg-btn"
-              style={{ fontSize: 10, padding: "2px 8px" }}
+            <Button
+              size="sm"
+              className="h-6 px-2 text-[11px]"
               disabled={!selectedSo || linking}
               onClick={() => onLink(po.po_no, po.lines[0]?.proj_no, selectedSo)}
             >
               {linking ? "…" : "Link"}
-            </button>
+            </Button>
           </div>
         )}
 
-        <span style={{ marginLeft: "auto", fontWeight: 500, color: "#333", fontFamily: "monospace", flexShrink: 0 }}>
+        <span className="ml-auto shrink-0 font-mono font-medium">
           {fmtMYR(poAmt)}
         </span>
       </div>
       {filteredLines.map((r, i) => (
-        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0 5px 14px", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
-          <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
+        <div key={i} className="flex items-center justify-between gap-2 border-b border-border/60 py-1.5 pl-3.5 text-[13px]">
+          <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title={r.description}>
             {r.description || r.item_code || "—"}
           </span>
           <StatusBadge status={r.line_status} />
           <StatusBadge status={r.payment_status} />
-          <span style={{ fontWeight: 500, color: "#E24B4A", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.po_amount)}</span>
+          <span className="shrink-0 font-mono font-medium text-destructive">{fmtMYR(r.po_amount)}</span>
         </div>
       ))}
     </>
@@ -293,54 +296,44 @@ export default function OrderListEnhanced({ entity = "QM", search = "", user }) 
 
   return (
     <div>
-      {/* ── Filter bar ─────────────────────────────────────────── */}
-      <div className="filter" style={{ gap: 8 }}>
-        <span className="f-lbl">Order List Enhanced</span>
-        <span style={{ fontSize: 10, color: "#888780" }}>View selection is now per-project — set it on each project card below.</span>
-        <button className="pg-btn" style={{ marginLeft: "auto" }} onClick={run} disabled={loading}>
+      {/* ── Filter bar — plain inline row (no colored toolbar band) ── */}
+      <div className="mb-5 flex flex-wrap items-center gap-2.5 text-xs text-subtle">
+        <span className="font-medium">Order List Enhanced</span>
+        <span className="text-muted-foreground">View selection is now per-project — set it on each project card below.</span>
+        <Button size="sm" className="ml-auto" onClick={run} disabled={loading}>
           {loading ? "Loading…" : "Refresh"}
-        </button>
+        </Button>
       </div>
 
       {/* ── Grand KPI row (aggregated using each project's own selected view) ── */}
-      <div style={{ padding: "14px 18px", background: "#fff", borderBottom: "1px solid #e8e7e0" }}>
-        <div className="kpi-row" style={{ marginBottom: 0 }}>
-          <div className="kpi">
-            <div className="kpi-lbl">Total SO Amount</div>
-            <div className="kpi-val b">{fmtMYR(totSO)}</div>
-            <div className="kpi-sub">{Object.keys(tree).length} projects</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Total PO Amount</div>
-            <div className="kpi-val a">{fmtMYR(totPO)}</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Gross Margin</div>
-            <div className="kpi-val" style={{ color: totGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(totGM)}</div>
-            <div className="kpi-sub">{totPct.toFixed(1)}% of sales</div>
-          </div>
-          <div className="kpi">
-            <div className="kpi-lbl">Margin %</div>
-            <div className="kpi-val" style={{ color: totGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{totPct.toFixed(1)}%</div>
-            <div className="kpi-sub">{entity} · each project's own view</div>
-          </div>
-        </div>
+      <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
+        <Card className="min-w-0 px-3.5 py-2.5">
+          <div className="truncate text-xs text-muted-foreground">Total SO Amount</div>
+          <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-primary">{fmtMYR(totSO)}</div>
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">{Object.keys(tree).length} projects</div>
+        </Card>
+        <Card className="min-w-0 px-3.5 py-2.5">
+          <div className="truncate text-xs text-muted-foreground">Total PO Amount</div>
+          <div className="mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums text-warning">{fmtMYR(totPO)}</div>
+        </Card>
+        <Card className="min-w-0 px-3.5 py-2.5">
+          <div className="truncate text-xs text-muted-foreground">Gross Margin</div>
+          <div className={cn("mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums", totGM >= 0 ? "text-success" : "text-destructive")}>{fmtMYR(totGM)}</div>
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">{totPct.toFixed(1)}% of sales</div>
+        </Card>
+        <Card className="min-w-0 px-3.5 py-2.5">
+          <div className="truncate text-xs text-muted-foreground">Margin %</div>
+          <div className={cn("mt-0.5 truncate text-lg font-semibold leading-tight tracking-tight tabular-nums", totGM >= 0 ? "text-success" : "text-destructive")}>{totPct.toFixed(1)}%</div>
+          <div className="mt-0.5 truncate text-xs text-muted-foreground">{entity} · each project's own view</div>
+        </Card>
       </div>
 
       {/* ── Content ────────────────────────────────────────────── */}
-      <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8, background: "#fff" }}>
-        {loading && (
-          <div style={{ textAlign: "center", padding: 40, color: "#888780", fontSize: 12 }}>
-            Loading…
-          </div>
-        )}
+      <div className="flex flex-col gap-2 bg-card p-4">
+        {loading && <TableSkeleton rows={5} cols={5} />}
 
         {!loading && projKeys.length === 0 && (
-          <div className="card">
-            <div style={{ textAlign: "center", padding: "2rem", color: "#888780", fontSize: 13 }}>
-              No data found.
-            </div>
-          </div>
+          <EmptyState title="No projects for this entity" hint="Switch entity or try a different project code." />
         )}
 
         {!loading && projKeys.map(projNo => {
@@ -362,45 +355,43 @@ export default function OrderListEnhanced({ entity = "QM", search = "", user }) 
           const { soAmt: projSOAmt, poAmt: projPOAmt, gm: projGM, gmPct: projGMPct } = projStats[projNo];
 
           return (
-            <div key={projNo} className="card" style={{ marginBottom: 8 }}>
+            <div key={projNo} className="mb-2 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
 
               {/* Project header */}
-              <div className="card-hdr" onClick={() => toggleProj(projNo)}
-                style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none", flexWrap: "wrap" }}>
-                <span style={{
-                  fontSize: 10, color: "#888780", width: 12, display: "inline-block",
-                  transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
-                  transition: "transform 0.15s",
-                }}>▶</span>
-                <span className="card-title" style={{ minWidth: 160, fontSize: 13 }}>{projNo}</span>
-                <span className="bdg bdg-ps" style={{ fontSize: 10 }}>{soKeys.length} SO</span>
+              <div
+                className="flex cursor-pointer select-none flex-wrap items-center gap-2.5 border-b border-border bg-muted/40 px-3.5 py-2.5"
+                onClick={() => toggleProj(projNo)}
+              >
+                <ChevronRightIcon open={isOpen} />
+                <span className="min-w-[160px] text-[14px] font-semibold">{projNo}</span>
+                <Badge>{soKeys.length} SO</Badge>
                 {unlinkedPoKeys.length > 0 && (
-                  <span className="bdg bdg-lic" style={{ fontSize: 10 }}>+{unlinkedPoKeys.length} unlinked PO</span>
+                  <Badge variant="secondary">+{unlinkedPoKeys.length} unlinked PO</Badge>
                 )}
                 <LevelToggle value={lvl} onChange={(newLvl) => setLevelFor(projNo, newLvl)} />
-                <div style={{ display: "flex", gap: 24, marginLeft: "auto", flexWrap: "wrap" }}>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: "#888780" }}>Total SO Amount</div>
-                    <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(projSOAmt)}</div>
+                <div className="ml-auto flex flex-wrap gap-6">
+                  <div className="text-right">
+                    <div className="text-[11px] text-muted-foreground">Total SO Amount</div>
+                    <div className="text-[13px] font-medium">{fmtMYR(projSOAmt)}</div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: "#888780" }}>Total PO Amount</div>
-                    <div style={{ fontSize: 12, fontWeight: 500 }}>{fmtMYR(projPOAmt)}</div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-muted-foreground">Total PO Amount</div>
+                    <div className="text-[13px] font-medium">{fmtMYR(projPOAmt)}</div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: "#888780" }}>Gross Margin</div>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: projGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(projGM)}</div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-muted-foreground">Gross Margin</div>
+                    <div className={cn("text-[13px] font-medium", projGM >= 0 ? "text-success" : "text-destructive")}>{fmtMYR(projGM)}</div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: "#888780" }}>Margin %</div>
-                    <div style={{ fontSize: 12, fontWeight: 500 }}><GmBadge pct={projGMPct} /></div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-muted-foreground">Margin %</div>
+                    <div className="text-[13px] font-medium"><GmBadge pct={projGMPct} /></div>
                   </div>
                 </div>
               </div>
 
               {/* Project body */}
               {isOpen && (
-                <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "#fff" }}>
+                <div className="flex flex-col gap-2 bg-card p-3">
 
                   {/* SO rows */}
                   {soKeys.map(soNo => {
@@ -422,64 +413,69 @@ export default function OrderListEnhanced({ entity = "QM", search = "", user }) 
                     const soOverall    = combinedStatus(soBillingAgg, soPaymentAgg);
 
                     return (
-                      <div key={soNo} style={{ border: "0.5px solid #e8e7e0", borderRadius: 8, overflow: "hidden", background: "#fff" }}>
+                      <div key={soNo} className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
 
                         {/* SO header */}
-                        <div onClick={() => toggleSO(soKey)}
-                          style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", background: "#fafaf8", borderBottom: isSoOpen ? "0.5px solid #e8e7e0" : "none", cursor: "pointer", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 10, color: "#888780" }}>{isSoOpen ? "▾" : "▸"}</span>
-                          <span style={{ fontSize: 11, fontWeight: 500 }}>{soNo}</span>
-                          <span style={{ fontSize: 10, color: "#888780" }}>
+                        <div
+                          onClick={() => toggleSO(soKey)}
+                          className={cn(
+                            "flex cursor-pointer flex-wrap items-center gap-2 bg-muted/40 px-3 py-1.5",
+                            isSoOpen && "border-b border-border"
+                          )}
+                        >
+                          <span className="text-[11px] text-muted-foreground">{isSoOpen ? "▾" : "▸"}</span>
+                          <span className="text-[12px] font-medium">{soNo}</span>
+                          <span className="text-[11px] text-muted-foreground">
                             {so.so_date ? so.so_date.slice(0, 10) : ""}
                           </span>
                           <StatusBadge status={soOverall} />
                           {/* SO-level margin — recalculates with the project's selected view */}
-                          <div style={{ display: "flex", gap: 12, marginLeft: "auto", fontSize: 10, alignItems: "center" }}>
-                            <span>SO: <strong style={{ fontFamily: "monospace" }}>{fmtMYR(soAmt)}</strong></span>
-                            <span>PO: <strong style={{ fontFamily: "monospace" }}>{fmtMYR(poAmt)}</strong></span>
-                            <span>GM: <strong style={{ fontFamily: "monospace", color: soGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(soGM)}</strong> <GmBadge pct={soGMPct} /></span>
+                          <div className="ml-auto flex items-center gap-3 text-[11px]">
+                            <span>SO: <strong className="font-mono">{fmtMYR(soAmt)}</strong></span>
+                            <span>PO: <strong className="font-mono">{fmtMYR(poAmt)}</strong></span>
+                            <span>GM: <strong className={cn("font-mono", soGM >= 0 ? "text-success" : "text-destructive")}>{fmtMYR(soGM)}</strong> <GmBadge pct={soGMPct} /></span>
                           </div>
                         </div>
 
                         {/* SO detail */}
                         {isSoOpen && (
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, background: "#fff" }}>
+                          <div className="grid grid-cols-1 bg-card md:grid-cols-2">
 
                             {/* Sales lines */}
-                            <div style={{ padding: "8px 12px", borderRight: "0.5px solid #e8e7e0" }}>
-                              <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                            <div className="border-b border-border p-3 md:border-b-0 md:border-r">
+                              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                                 Sales (SO lines)
                               </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
-                                <span className="mono" style={{ fontWeight: 500, color: "#185FA5", flexShrink: 0 }}>{soNo}</span>
-                                <span style={{ fontSize: 10, color: "#888780", flexShrink: 0 }}>{so.so_date ? so.so_date.slice(0, 10) : ""}</span>
+                              <div className="flex items-center gap-1.5 border-b border-border/60 py-1.5 text-[13px]">
+                                <span className="shrink-0 font-mono font-medium text-primary">{soNo}</span>
+                                <span className="shrink-0 text-[11px] text-muted-foreground">{so.so_date ? so.so_date.slice(0, 10) : ""}</span>
                                 <StatusBadge status={soOverall} />
-                                <span style={{ marginLeft: "auto", fontWeight: 500, color: "#333", fontFamily: "monospace", flexShrink: 0 }}>
+                                <span className="ml-auto shrink-0 font-mono font-medium">
                                   {fmtMYR(soAmt)}
                                 </span>
                               </div>
                               {soLinesF.length === 0 && (
-                                <div style={{ fontSize: 12, color: "#888780", fontStyle: "italic", padding: "8px 0" }}>No lines under this view</div>
+                                <div className="py-2 text-[13px] italic text-muted-foreground">No lines under this view</div>
                               )}
                               {soLinesF.map((r, i) => (
-                                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "0.5px solid #f0f0ee", fontSize: 12 }}>
-                                  <span style={{ color: "#333", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.description}>
+                                <div key={i} className="flex items-center justify-between gap-2 border-b border-border/60 py-1.5 text-[13px]">
+                                  <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title={r.description}>
                                     {r.description || r.item_code || "—"}
                                   </span>
                                   <StatusBadge status={r.billing_status} />
                                   <StatusBadge status={r.payment_status} />
-                                  <span style={{ fontWeight: 500, color: "#0C9B6E", fontFamily: "monospace", flexShrink: 0 }}>{fmtMYR(r.so_amount)}</span>
+                                  <span className="shrink-0 font-mono font-medium text-success">{fmtMYR(r.so_amount)}</span>
                                 </div>
                               ))}
                             </div>
 
                             {/* PO groups */}
-                            <div style={{ padding: "8px 12px" }}>
-                              <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                            <div className="p-3">
+                              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                                 Purchases (PO)
                               </div>
                               {poGroups.length === 0 && (
-                                <div style={{ fontSize: 12, color: "#888780", fontStyle: "italic" }}>No linked PO</div>
+                                <div className="text-[13px] italic text-muted-foreground">No linked PO</div>
                               )}
                               {poGroups.map(g => <PoGroup key={g.po_no} po={g} level={lvl} />)}
                             </div>
@@ -491,8 +487,8 @@ export default function OrderListEnhanced({ entity = "QM", search = "", user }) 
 
                   {/* Unlinked PO section */}
                   {unlinkedPoKeys.length > 0 && (
-                    <div style={{ borderTop: "0.5px dashed #e8e7e0", paddingTop: 8 }}>
-                      <div style={{ fontSize: 10, fontWeight: 500, color: "#888780", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                    <div className="border-t border-dashed border-border pt-2">
+                      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                         Purchases not linked to any SO
                       </div>
                       {unlinkedPoKeys.map(k => (
@@ -511,10 +507,10 @@ export default function OrderListEnhanced({ entity = "QM", search = "", user }) 
                   )}
 
                   {/* Project footer */}
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 20, padding: "8px 0", borderTop: "0.5px solid #e8e7e0", fontSize: 11 }}>
-                    <span>Total SO Amount: <strong style={{ color: "#0C9B6E", fontFamily: "monospace" }}>{fmtMYR(projSOAmt)}</strong></span>
-                    <span>Total PO Amount: <strong style={{ color: "#E24B4A", fontFamily: "monospace" }}>{fmtMYR(projPOAmt)}</strong></span>
-                    <span>Gross Margin: <strong style={{ fontFamily: "monospace", color: projGM >= 0 ? "#0C9B6E" : "#E24B4A" }}>{fmtMYR(projGM)}</strong> <GmBadge pct={projGMPct} /></span>
+                  <div className="flex justify-end gap-5 border-t border-border py-2 text-[12px]">
+                    <span>Total SO Amount: <strong className="font-mono text-success">{fmtMYR(projSOAmt)}</strong></span>
+                    <span>Total PO Amount: <strong className="font-mono text-destructive">{fmtMYR(projPOAmt)}</strong></span>
+                    <span>Gross Margin: <strong className={cn("font-mono", projGM >= 0 ? "text-success" : "text-destructive")}>{fmtMYR(projGM)}</strong> <GmBadge pct={projGMPct} /></span>
                   </div>
                 </div>
               )}
@@ -523,5 +519,13 @@ export default function OrderListEnhanced({ entity = "QM", search = "", user }) 
         })}
       </div>
     </div>
+  );
+}
+
+function ChevronRightIcon({ open }) {
+  return (
+    <span className={cn("inline-block w-3 shrink-0 text-[11px] text-muted-foreground transition-transform", open && "rotate-90")}>
+      ▶
+    </span>
   );
 }

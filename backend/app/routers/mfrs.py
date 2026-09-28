@@ -6,6 +6,7 @@ from app.db.database import get_db
 from app.models.schemas import LockPeriodRequest, LockPeriodResponse, MfrsResponse
 from app.services.mfrs_service import MfrsService
 from app.utils import validate_entity
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/mfrs", tags=["MFRS"])
 _svc = MfrsService()
@@ -19,3 +20,15 @@ def get_mfrs(journal_type: Literal["SALES","PURCHASE"],
 def lock_period(req: LockPeriodRequest, db: Session = Depends(get_db)):
     validate_entity(req.entity)  # validate entity from request body
     return _svc.lock_period(db, req)
+
+
+class UnlockRequest(BaseModel):
+    source_key: int
+    journal_type: str
+    entity: str = "QM"
+    user: str
+
+@router.post("/unlock")
+def unlock_period(req: UnlockRequest, db: Session = Depends(get_db)):
+    validate_entity(req.entity)
+    return _svc.unlock_period(db, req.source_key, req.journal_type, req.entity, req.user)
