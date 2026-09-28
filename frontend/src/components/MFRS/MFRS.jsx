@@ -191,6 +191,23 @@ function MfrsTable({ data, isSales }) {
   // width; offsets = running sum of the preceding header widths. Re-measured
   // when the container or any of those header cells changes size.
   const wrapRef = useRef(null);
+
+  // Scroll box ends at the bottom of the window: the header row stays pinned
+  // while contract lines scroll, and the horizontal scrollbar is always on
+  // screen instead of below the fold.
+  const [boxMaxH, setBoxMaxH] = useState("calc(100vh - 260px)");
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = wrapRef.current; if (!el || !el.offsetParent) return; // tab hidden
+      const pageScroller = el.closest(".overflow-y-auto");
+      const top = el.getBoundingClientRect().top + (pageScroller ? pageScroller.scrollTop : 0);
+      // leave room for the card's footer line under the table
+      setBoxMaxH(Math.max(260, Math.round(window.innerHeight - top - 56)) + "px");
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [data]);
   const headRowRef = useRef(null);
   const [layout, setLayout] = useState({ fit: cols.length, lefts: [] });
   useLayoutEffect(() => {
@@ -297,7 +314,7 @@ function MfrsTable({ data, isSales }) {
         {partlyFrozen && <span>Some columns scroll under Days / YTD to fit the screen — widen the window or collapse the sidebar to freeze more.</span>}
       </div>}
       {/* Own scroll area: headers stay visible while the contract lines scroll. */}
-      <div ref={wrapRef} className="mf2-wrap max-h-[calc(100vh-260px)] overflow-auto border-t border-border">
+      <div ref={wrapRef} className="mf2-wrap overflow-auto border-t border-border" style={{ maxHeight: boxMaxH }}>
         <table className="mf2-table">
           <thead><tr ref={headRowRef}>
             {cols.map(c => (

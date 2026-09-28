@@ -448,17 +448,26 @@ export default function InvoiceTab({tab,entity="QM"}){
   const headRowRef=useRef(null);
 
   // Column sizing: the first time invoices arrive, lock each column to the
-  // width it naturally takes, and give the table an explicit total width.
+  // width its content needs, and give the table an explicit total width.
   // With table-layout:fixed that makes the widths authoritative, so the
   // resize handles can widen AND narrow columns (text then ends in "…").
-  // Done once per tab, so the user's own resizing survives re-running.
+  // Content width is measured from the body rows too — a fixed layout only
+  // sizes columns from the header row, which clipped the Action buttons and
+  // the date/remark fields. Long text columns are capped (COL_CAP) and
+  // simply truncate. Done once per tab, so the user's resizing survives.
   const sizedRef=useRef(false);
   useLayoutEffect(()=>{
     const row=headRowRef.current;
     if(sizedRef.current||!row||!invoices.length) return;
     const table=row.closest("table");
     const ths=[...row.children];
-    const widths=ths.map(th=>th.offsetWidth);
+    const COL_CAP=320;
+    const bodyRows=[...(table.tBodies[0]?.rows||[])].filter(r=>r.cells.length===ths.length).slice(0,80);
+    const widths=ths.map((th,i)=>{
+      let w=th.offsetWidth;
+      if(i<ths.length-1) bodyRows.forEach(r=>{ w=Math.max(w,Math.min(r.cells[i].scrollWidth+2,COL_CAP)); });
+      return Math.ceil(w);
+    });
     ths.forEach((th,i)=>{
       if(i===ths.length-1) return; // trailing filler column takes any leftover space
       th.style.width=widths[i]+"px";
@@ -468,6 +477,23 @@ export default function InvoiceTab({tab,entity="QM"}){
     table.style.width=Math.max(sum,table.parentElement.clientWidth)+"px";
     sizedRef.current=true;
   },[invoices.length]);
+  // The table's scroll box ends at the bottom of the window, so its
+  // horizontal scrollbar is always on screen (it used to sit below the fold
+  // until the whole page was scrolled). Measured from the box's position
+  // within the page, and re-measured on window resize.
+  const scrollRef=useRef(null);
+  const [tableMaxH,setTableMaxH]=useState("calc(100vh - 230px)");
+  useLayoutEffect(()=>{
+    const measure=()=>{
+      const el=scrollRef.current; if(!el||!el.offsetParent) return; // tab hidden: keep the last value
+      const pageScroller=el.closest(".overflow-y-auto");
+      const top=el.getBoundingClientRect().top+(pageScroller?pageScroller.scrollTop:0);
+      setTableMaxH(Math.max(320,Math.round(window.innerHeight-top-12))+"px");
+    };
+    measure();
+    window.addEventListener("resize",measure);
+    return()=>window.removeEventListener("resize",measure);
+  },[invoices.length,loading]);
   const [lefts,setLefts]=useState([]);
   useLayoutEffect(()=>{
     const row=headRowRef.current; if(!row) return;
@@ -589,7 +615,7 @@ export default function InvoiceTab({tab,entity="QM"}){
             </div>
 
             {/* Own scroll area: the header row stays visible while invoice lines scroll. */}
-            <div className="max-h-[calc(100vh-230px)] min-h-[360px] w-full overflow-auto">
+            <div ref={scrollRef} className="min-h-[320px] w-full overflow-auto" style={{maxHeight:tableMaxH}}>
               <table className="table-fixed border-collapse text-[13px] [&_td]:overflow-hidden [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_td]:px-2.5 [&_td]:py-2 [&_td]:align-middle">
               <thead className="sticky top-0 z-30">
                 <tr ref={headRowRef}>
@@ -605,12 +631,15 @@ export default function InvoiceTab({tab,entity="QM"}){
                   <ColHeader label="Home CR"      col="home_cr"     minWidth={100} align="right" {...chProps}/>
                   <ColHeader label="Amount"       col="amount"      minWidth={100} align="right" {...chProps}/>
                   <ColHeader label="Type"         col="category"    minWidth={110} {...chProps}/>
-                  <StaticTh label="End User"   minWidth={100}/>
-                  <StaticTh label="Start Date" minWidth={96}/>
-                  <StaticTh label="End Date"   minWidth={96}/>
+                  {/* Floors sized to the widest control each column can hold
+                      (edit mode, Update + ✕, Request unlock), so nothing is
+                      clipped even when those states appear after sizing. */}
+                  <StaticTh label="End User"   minWidth={112}/>
+                  <StaticTh label="Start Date" minWidth={126}/>
+                  <StaticTh label="End Date"   minWidth={126}/>
                   <StaticTh label="Days"       minWidth={60} align="right"/>
-                  <StaticTh label="Remark"     minWidth={120}/>
-                  <StaticTh label="Action"     minWidth={120}/>
+                  <StaticTh label="Remark"     minWidth={132}/>
+                  <StaticTh label="Action"     minWidth={180}/>
                   <th className="border-b border-border bg-card"/>
                 </tr>
               </thead>
