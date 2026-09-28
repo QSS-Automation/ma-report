@@ -74,7 +74,7 @@ function ColHeader({label,col,minWidth=90,align="left",freezeLeft,freezeEdge=fal
   const unique=isOpen?getUnique(col):[];
   return(
     <th ref={thRef} className={cn("relative select-none border-b border-border bg-card p-0", freezeLeft!=null&&"sticky z-30", freezeEdge&&FZ_EDGE)}
-      style={{width:minWidth,minWidth,textAlign:align,...(freezeLeft!=null?{left:freezeLeft}:{})}}>
+      data-minw={minWidth} style={{width:minWidth,minWidth,textAlign:align,...(freezeLeft!=null?{left:freezeLeft}:{})}}>
       <div className="flex cursor-pointer items-center gap-1 px-2.5 py-2.5"
         onMouseDown={e=>e.stopPropagation()}
         onClick={e=>{e.stopPropagation();onMenu(isOpen?null:col);}}>
@@ -98,7 +98,7 @@ function StaticTh({label,minWidth=90,align="left"}){
   const thRef=useRef(null);
   return(
     <th ref={thRef} className="relative whitespace-nowrap border-b border-border bg-card px-2.5 py-2.5 text-[12.5px] font-bold text-muted-foreground"
-      style={{width:minWidth,textAlign:align}}>
+      data-minw={minWidth} style={{width:minWidth,minWidth,textAlign:align}}>
       {label}
       <span className="resize-handle" onMouseDown={e=>startResize(e,thRef)}/>
     </th>
@@ -464,7 +464,10 @@ export default function InvoiceTab({tab,entity="QM"}){
     const COL_CAP=320;
     const bodyRows=[...(table.tBodies[0]?.rows||[])].filter(r=>r.cells.length===ths.length).slice(0,80);
     const widths=ths.map((th,i)=>{
-      let w=th.offsetWidth;
+      // Never below the column's declared minimum: the browser squeezes an
+      // auto-width table to the screen before sizing, which can shrink a
+      // column (e.g. Action) below its widest button state.
+      let w=Math.max(th.offsetWidth,Number(th.dataset.minw)||0);
       if(i<ths.length-1) bodyRows.forEach(r=>{ w=Math.max(w,Math.min(r.cells[i].scrollWidth+2,COL_CAP)); });
       return Math.ceil(w);
     });
