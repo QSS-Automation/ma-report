@@ -1,11 +1,11 @@
 import React,{useState,useCallback,useRef,useEffect,useLayoutEffect} from "react";
-import {Download,Lock,Unlock,Plus,ClipboardList} from "lucide-react";
+import {Download,Lock,Unlock,Plus,ClipboardList,ExternalLink} from "lucide-react";
 import {useMonthPicker} from "../../hooks/useMonthPicker";
 import MonthPicker from "../Shared/MonthPicker";
 import LockModal from "../Shared/LockModal";
 import UnlockModal from "../Shared/UnlockModal";
 import TaskModal from "../Shared/TaskModal";
-import {getSales,getPurchases,saveSplits,saveManualLine,lockPeriod,getAccounts,createTask} from "../../services/api";
+import {getSales,getPurchases,saveSplits,saveManualLine,lockPeriod,getAccounts,createTask,getInvoiceFile} from "../../services/api";
 import {fmtMYR,fmtDateShort} from "../../utils/fmt";
 import {showToast} from "../../utils/toast";
 import {useAuth} from "../../context/AuthContext";
@@ -441,6 +441,36 @@ export default function InvoiceTab({tab,entity="QM"}){
   const periodLbl=mp.fromLabel===mp.toLabel?mp.fromLabel:mp.fromLabel+"–"+mp.toLabel;
   const colSpanFull=isSales?18:19;
 
+  // Sales "Ref. 1" is the invoice number; its PDF ("{ref}_….pdf") sits in
+  // SharePoint in the doc-date year's folder. The backend finds the exact
+  // file (/api/invoice-file) and we open it in a new tab. Only entities
+  // with a configured SharePoint folder get links (see sharepoint_service).
+  // Entities with a SharePoint invoice folder (both the app entity name and
+  // the short folder code are accepted; see backend COMPANIES).
+  const INVOICE_LINK_ENTITIES=["QM","QA","QAW","Daltos","DT","QSG","CC","QArmour","QAR","QOmnitech","OMT"].map(e=>e.toLowerCase());
+  const invoiceLinks=isSales&&INVOICE_LINK_ENTITIES.includes(String(entity).toLowerCase());
+  const openInvoice=async inv=>{
+    // Open the tab right away, inside the click, so popup blockers allow it;
+    // point it at the file once the lookup returns.
+    const w=window.open("","_blank");
+    if(w){
+      w.document.title="Opening invoice…";
+      const msg=w.document.createElement("p");
+      msg.style.cssText="font:14px system-ui,sans-serif;padding:24px;color:#555";
+      msg.textContent=`Opening ${inv.ref_no1}…`;
+      w.document.body.appendChild(msg);
+    }
+    try{
+      const r=await getInvoiceFile(entity,inv.ref_no1,String(inv.trans_date).slice(0,10));
+      if(!r.data?.url){ if(w) w.close(); showToast(`Mock mode — would open ${r.data?.name||inv.ref_no1}`); return; }
+      if(w){ w.opener=null; w.location.replace(r.data.url); }
+      else window.open(r.data.url,"_blank","noopener");
+    }catch(e){
+      if(w) w.close();
+      showToast("⚠ "+(e.response?.data?.detail||e.message));
+    }
+  };
+
   // Columns Date to Desc. stay frozen while the rest scroll sideways. Their
   // left offsets are measured from the header cells (columns are resizable)
   // and re-measured whenever a frozen header cell changes width.
@@ -713,9 +743,15 @@ export default function InvoiceTab({tab,entity="QM"}){
                         </td>
                         <td {...FZ(4,"font-mono text-[11px]")}>{inv.proj_no||"—"}</td>
                         <td {...FZ(5,"font-mono")}>
-                          {reallyLocked
-                            ?<>🔒 {inv.ref_no1}</>
-                            :<span className="text-primary">{inv.ref_no1||"—"}</span>}
+                          {invoiceLinks&&inv.ref_no1
+                            ?<button type="button" onClick={()=>openInvoice(inv)} title="Open invoice PDF (SharePoint)"
+                                className="inline-flex max-w-full items-center gap-1 bg-transparent p-0 text-primary underline-offset-2 hover:underline">
+                                <span className="truncate">{reallyLocked&&"🔒 "}{inv.ref_no1}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0 opacity-60"/>
+                              </button>
+                            :reallyLocked
+                              ?<>🔒 {inv.ref_no1}</>
+                              :<span className="text-primary">{inv.ref_no1||"—"}</span>}
                         </td>
                         {!isSales&&<td {...FZ(6,"font-mono text-[11px] text-muted-foreground")}>{inv.ref_no2||"—"}</td>}
                         <td {...FZ(FROZEN-1,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")}>

@@ -5,6 +5,7 @@ from app.config import settings
 from app.routers import pnl, bs, adjustment, mfrs, staging, auth, log, tasks, export, order_list_enhanced
 from app.services.scheduler_service import start_scheduler
 from app.routers import order_list
+from app.routers import invoice_file
 
 
 app = FastAPI(title="Quandatics MA Report", version="1.0.0",
@@ -29,6 +30,7 @@ app.include_router(tasks.router)
 app.include_router(order_list.router)
 app.include_router(export.router)
 app.include_router(order_list_enhanced.router)
+app.include_router(invoice_file.router)
 
 @app.on_event("startup")
 def startup():

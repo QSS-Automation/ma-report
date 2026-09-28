@@ -8,6 +8,12 @@ class Settings(BaseSettings):
     db_pass: str = ""
     debug:   bool = False
     teams_webhook_url: str = ""
+    # Microsoft Graph (app-only) — used to find invoice PDFs in SharePoint.
+    # App registration needs Application permission Sites.Read.All (admin
+    # consented) and a client secret. Leave blank to disable the feature.
+    graph_tenant_id: str = ""
+    graph_client_id: str = ""
+    graph_client_secret: str = ""
     @property
     def database_url(self) -> str:
         return (f"mysql+pymysql://{self.db_user}:{self.db_pass}"
