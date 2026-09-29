@@ -64,6 +64,6 @@ export const getAccounts = (entity, jt)                => MOCK ? asResponse(mock
 export const getOrderListEnhanced = (entity, level)    => MOCK ? asResponse(mock.mockOrderListEnhanced())        : API.get("/api/order-list-enhanced", { params: { entity, level } });
 export const linkPoToSo     = (data)                   => MOCK ? asResponse({ status: "ok" })                    : API.post("/api/order-list-enhanced/link-po", data);
 // Sales Ref. 1 -> SharePoint invoice PDF link ({url, name, matches}). Mock mode returns no url.
-export const getInvoiceFile = (entity, ref, docDate)    => MOCK ? asResponse({ url: null, name: `${ref}_mock.pdf`, matches: 1 }) : API.get("/api/invoice-file", { params: { entity, ref, doc_date: docDate } });
+export const getInvoiceFile = (entity, ref, docDate, kind = "sales") => MOCK ? asResponse({ url: null, name: `${ref}_mock.pdf`, matches: 1 }) : API.get("/api/invoice-file", { params: { entity, ref, doc_date: docDate, kind } });
 export const getPendingLinks = (entity)                => MOCK ? asResponse([])                                  : API.get("/api/order-list-enhanced/pending-links", { params: { entity } });
 export default API;

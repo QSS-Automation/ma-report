@@ -447,8 +447,12 @@ export default function InvoiceTab({tab,entity="QM"}){
   // with a configured SharePoint folder get links (see sharepoint_service).
   // Entities with a SharePoint invoice folder (both the app entity name and
   // the short folder code are accepted; see backend COMPANIES).
-  const INVOICE_LINK_ENTITIES=["QM","QA","QAW","Daltos","DT","QSG","CC","QArmour","QAR","QOmnitech","OMT"].map(e=>e.toLowerCase());
-  const invoiceLinks=isSales&&INVOICE_LINK_ENTITIES.includes(String(entity).toLowerCase());
+  // Sales: every company. Purchases: the file is named after the supplier
+  // invoice no., so the link looks it up by the line's Ref. 2 (QM only so far).
+  const SALES_LINK_ENTITIES=["QM","QA","QAW","Daltos","DT","QSG","CC","QArmour","QAR","QOmnitech","OMT"].map(e=>e.toLowerCase());
+  const PURCHASE_LINK_ENTITIES=["qm"];
+  const invoiceLinks=(isSales?SALES_LINK_ENTITIES:PURCHASE_LINK_ENTITIES).includes(String(entity).toLowerCase());
+  const linkRef=inv=>isSales?inv.ref_no1:inv.ref_no2;
   const openInvoice=async inv=>{
     // Open the tab right away, inside the click, so popup blockers allow it;
     // point it at the file once the lookup returns.
@@ -457,12 +461,12 @@ export default function InvoiceTab({tab,entity="QM"}){
       w.document.title="Opening invoice…";
       const msg=w.document.createElement("p");
       msg.style.cssText="font:14px system-ui,sans-serif;padding:24px;color:#555";
-      msg.textContent=`Opening ${inv.ref_no1}…`;
+      msg.textContent=`Opening ${linkRef(inv)}…`;
       w.document.body.appendChild(msg);
     }
     try{
-      const r=await getInvoiceFile(entity,inv.ref_no1,String(inv.trans_date).slice(0,10));
-      if(!r.data?.url){ if(w) w.close(); showToast(`Mock mode — would open ${r.data?.name||inv.ref_no1}`); return; }
+      const r=await getInvoiceFile(entity,linkRef(inv),String(inv.trans_date).slice(0,10),isSales?"sales":"purchase");
+      if(!r.data?.url){ if(w) w.close(); showToast(`Mock mode — would open ${r.data?.name||linkRef(inv)}`); return; }
       if(w){ w.opener=null; w.location.replace(r.data.url); }
       else window.open(r.data.url,"_blank","noopener");
     }catch(e){
@@ -743,8 +747,9 @@ export default function InvoiceTab({tab,entity="QM"}){
                         </td>
                         <td {...FZ(4,"font-mono text-[11px]")}>{inv.proj_no||"—"}</td>
                         <td {...FZ(5,"font-mono")}>
-                          {invoiceLinks&&inv.ref_no1
-                            ?<button type="button" onClick={()=>openInvoice(inv)} title="Open invoice PDF (SharePoint)"
+                          {invoiceLinks&&inv.ref_no1&&linkRef(inv)
+                            ?<button type="button" onClick={()=>openInvoice(inv)}
+                                title={isSales?"Open invoice PDF (SharePoint)":`Open supplier invoice ${inv.ref_no2} (SharePoint)`}
                                 className="inline-flex max-w-full items-center gap-1 bg-transparent p-0 text-primary underline-offset-2 hover:underline">
                                 <span className="truncate">{reallyLocked&&"🔒 "}{inv.ref_no1}</span>
                                 <ExternalLink className="h-3 w-3 shrink-0 opacity-60"/>

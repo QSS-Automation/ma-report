@@ -187,7 +187,7 @@ function mockInvoices(entity, from, to, isSales) {
       de_acc_desc: isSales ? "Trade Receivables" : "Trade Payables",
       proj_no: `PRJ-${100 + (i % 4)}`,
       ref_no1: `${isSales ? "INV" : "PINV"}-2026-${String(200 + i)}`,
-      ref_no2: isSales ? `PO-${300 + i}` : null,
+      ref_no2: isSales ? `PO-${300 + i}` : `SI-${500 + i}`,   // purchases: supplier invoice no.
       description: isSales ? "Professional services rendered" : "Subcontracted work / supplies",
       home_dr: isSales ? amount : 0,
       home_cr: isSales ? 0 : amount,

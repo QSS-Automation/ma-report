@@ -50,7 +50,33 @@ def sales_invoice_folder(entity: str, year: int):
     company, code = c
     return f"{FINANCE_ROOT}/{company}/{code} Admin Account/{code} Debtor Invoice/{code} Invoice {year}"
 
+# Purchase invoices, per entity; {year} = year of the invoice's doc date.
+# Files are named  <PV no.>--<Supplier name>_<Purchase inv no.>_<description>
+# (e.g. "A0123--ABC Supplies Sdn Bhd_INV-7788_Laptop repair.pdf") and are
+# matched on the purchase invoice no. = the line's Ref. 2.
+PURCHASE_INVOICE_FOLDERS = {
+    "qm": FINANCE_ROOT + "/01. Quandatics M Sdn Bhd/QM Account/QM_Payable & Creditor/QM_Payable & Creditor Invoice/QM_Pymt List & Inv_{year}",
+}
+
 FOLDER_CACHE_SECONDS = 300   # new PDFs show up within 5 min (a miss refreshes at once)
+
+
+def _norm(s: str) -> str:
+    """Compare invoice numbers ignoring case, spaces and punctuation — file
+    names can't contain '/', so 'INV/7788' is saved as e.g. 'INV-7788'."""
+    return "".join(ch for ch in (s or "").lower() if ch.isalnum())
+
+
+def purchase_name_matches(filename: str, ref_no2: str) -> bool:
+    """True if the purchase inv no. segment of '<PV>--<Supplier>_<Inv>_<desc>.ext'
+    equals ref_no2. Any '_'-separated piece after '--' counts, so supplier
+    names containing '_' don't shift the match."""
+    key = _norm(ref_no2)
+    if not key:
+        return False
+    stem = filename.rsplit(".", 1)[0]
+    after = stem.split("--", 1)[1] if "--" in stem else stem
+    return any(_norm(part) == key for part in after.split("_"))
 
 
 class SharePointService:
@@ -91,11 +117,31 @@ class SharePointService:
         return r.json()
 
     def _get_drive_id(self) -> str:
+        """ID of the site's "Shared Documents" library.
+
+        Path-addressed sites need a closing ':' before any sub-resource
+        (/sites/{host}:/sites/{name}:/drives) — without it Graph treats the
+        rest as part of the site path and returns 404. So: resolve the site,
+        then pick the library whose URL ends in /Shared Documents (falling
+        back to the site's default library)."""
         if not SharePointService._drive_id:
-            drive = self._get(f"{GRAPH}/sites/{SITE}/drive?$select=id")
-            if not drive:
-                raise HTTPException(502, "SharePoint site or document library not found.")
-            SharePointService._drive_id = drive["id"]
+            site = self._get(f"{GRAPH}/sites/{SITE}?$select=id,webUrl")
+            if not site:
+                raise HTTPException(502, f"SharePoint site not found: https://{SITE.replace(':', '')}")
+            drives = self._get(f"{GRAPH}/sites/{site['id']}/drives?$select=id,name,webUrl") or {}
+            chosen = None
+            for d in drives.get("value", []):
+                url = (d.get("webUrl") or "").rstrip("/").lower()
+                if url.endswith("/shared%20documents") or url.endswith("/shared documents") \
+                        or d.get("name") in ("Documents", "Shared Documents"):
+                    chosen = d
+                    break
+            if not chosen:
+                chosen = self._get(f"{GRAPH}/sites/{site['id']}/drive?$select=id")
+            if not chosen:
+                names = ", ".join(d.get("name", "?") for d in drives.get("value", [])) or "none"
+                raise HTTPException(502, f"'Shared Documents' library not found on the site (libraries: {names}).")
+            SharePointService._drive_id = chosen["id"]
         return SharePointService._drive_id
 
     # ── folder listing (cached) ─────────────────────────────────────────
@@ -165,3 +211,34 @@ class SharePointService:
         if not hits:
             raise HTTPException(404, f"No PDF named '{ref}_...' found in '{path.split('/')[-1]}'.")
         return {"url": hits[0]["webUrl"], "name": hits[0]["name"], "matches": len(hits)}
+
+    def find_purchase_invoice(self, entity: str, ref_no2: str, doc_date: date) -> dict:
+        """Purchase invoice file whose name carries Ref. 2 as the purchase
+        inv no. Looks in the doc-date year's folder first, then the next
+        year's (an invoice dated late in the year may be filed with the
+        following year's payment list)."""
+        template = PURCHASE_INVOICE_FOLDERS.get((entity or "").lower())
+        if not template:
+            raise HTTPException(404, f"No SharePoint purchase invoice folder is set up for entity {entity}.")
+        ref = (ref_no2 or "").strip()
+        if not ref:
+            raise HTTPException(400, "This purchase line has no Ref. 2 (supplier invoice no.) to look up.")
+
+        def match(items):
+            hits = [i for i in (items or []) if not i["isFolder"] and purchase_name_matches(i["name"], ref)]
+            # PDFs first, then by name
+            return sorted(hits, key=lambda i: (not i["name"].lower().endswith(".pdf"), i["name"]))
+
+        tried = []
+        for year in (doc_date.year, doc_date.year + 1):
+            path = template.format(year=year)
+            items = self._list_folder(path)
+            if items is None:
+                continue
+            tried.append(path.split("/")[-1])
+            hits = match(items) or match(self._list_folder(path, force=True))
+            if hits:
+                return {"url": hits[0]["webUrl"], "name": hits[0]["name"], "matches": len(hits)}
+        if not tried:
+            raise HTTPException(404, f"Purchase invoice folder not found: {template.format(year=doc_date.year)}")
+        raise HTTPException(404, f"No file with purchase inv no. '{ref}' found in {' / '.join(tried)}.")
