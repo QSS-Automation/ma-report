@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { ChevronRight } from "lucide-react";
 import { numFmt } from "../../utils/fmt";
 import { Card } from "../ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
+import { TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
 import { cn } from "../../lib/utils";
 
 // Sticky first column keeps the description visible while month columns
@@ -73,28 +73,48 @@ function Row({ row, depth, path, open, toggle, cols }) {
   );
 }
 
+// Every node that has children, recursively — the "all expanded" state.
+function allOpen(rows) {
+  const next = {};
+  const walk = (list, path) => {
+    list.forEach((r, i) => {
+      const p = path + "." + i;
+      if (r.children && r.children.length > 0) {
+        next[p] = true;
+        walk(r.children, p);
+      }
+    });
+  };
+  walk(rows, "root");
+  return next;
+}
+
 export default function PnLTableV2({ data }) {
-  const [open, setOpen] = useState({});
+  // Opens with every line expanded (and again whenever new figures load).
+  const [open, setOpen] = useState(() => allOpen(data.rows));
+  useEffect(() => { setOpen(allOpen(data.rows)); }, [data]);
   const cols = data.month_labels;
   const toggle = (path) => setOpen(p => ({ ...p, [path]: !p[path] }));
 
   const anyOpen = Object.values(open).some(Boolean);
-  const expandAll = () => {
-    if (anyOpen) { setOpen({}); return; }
-    // Expand every node that has children, recursively.
-    const next = {};
-    const walk = (rows, path) => {
-      rows.forEach((r, i) => {
-        const p = path + "." + i;
-        if (r.children && r.children.length > 0) {
-          next[p] = true;
-          walk(r.children, p);
-        }
-      });
+  const expandAll = () => setOpen(anyOpen ? {} : allOpen(data.rows));
+
+  // The table has its own scroll box, ending at the bottom of the window, so
+  // the header row stays pinned while the lines scroll underneath it (a
+  // sticky header only works inside its nearest scrolling box).
+  const scrollRef = useRef(null);
+  const [maxH, setMaxH] = useState("calc(100vh - 260px)");
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = scrollRef.current; if (!el || !el.offsetParent) return;
+      const pageScroller = el.closest(".overflow-y-auto");
+      const top = el.getBoundingClientRect().top + (pageScroller ? pageScroller.scrollTop : 0);
+      setMaxH(Math.max(320, Math.round(window.innerHeight - top - 56)) + "px");
     };
-    walk(data.rows, "root");
-    setOpen(next);
-  };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
   return (
     <Card className="overflow-hidden">
@@ -109,14 +129,16 @@ export default function PnLTableV2({ data }) {
         <ChevronRight className={cn("h-3 w-3 transition-transform", anyOpen && "rotate-90")} />
         <span>{anyOpen ? "Collapse all" : "Expand all"}</span>
       </div>
-      <div className="overflow-x-auto">
-        <Table className="min-w-[300px]">
-          <TableHeader>
+      <div ref={scrollRef} className="overflow-auto" style={{ maxHeight: maxH }}>
+        {/* Plain <table>, not the Table primitive: that one wraps itself in
+            its own overflow box, which would stop the header sticking. */}
+        <table className="w-full min-w-[300px] caption-bottom border-collapse text-[13px]">
+          <TableHeader className="sticky top-0 z-30">
             <TableRow>
               <TableHead className={cn(STICKY, "z-20 bg-card text-left")}>Description</TableHead>
               <TableHead className={cn(TOTAL, "z-20 bg-card text-right")}>Total</TableHead>
               {cols.map(c => (
-                <TableHead key={c} className="text-right">{c}</TableHead>
+                <TableHead key={c} className="bg-muted text-right">{c}</TableHead>
               ))}
             </TableRow>
           </TableHeader>
@@ -125,7 +147,7 @@ export default function PnLTableV2({ data }) {
               <Row key={"root." + i} row={row} depth={0} path={"root." + i} open={open} toggle={toggle} cols={cols} />
             ))}
           </TableBody>
-        </Table>
+        </table>
       </div>
       <div className="px-4 py-2.5 text-[11px] text-muted-foreground">
         MYR · MFRS 15 basis · {cols.length} month columns · New category structure (Beta)

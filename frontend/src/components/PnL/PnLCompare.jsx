@@ -37,7 +37,7 @@ export default function PnLCompare({ cmpData, mp }) {
 
   const ROWS = [
     { key: "rev",  label: "Total Revenue",         section: "SALES",              rt: "subtotal", isSum: false },
-    { key: "cogs", label: "Cost of Goods Sold",     section: "COST OF GOODS SOLD", rt: "subtotal", isSum: false },
+    { key: "cogs", label: "Cost of Sales",          section: "COST OF GOODS SOLD", rt: "subtotal", isSum: false },
     { key: "gp",   label: "Gross Profit",           section: "GROSS_PROFIT",       rt: "summary",  isSum: true  },
     { key: "opex", label: "Operating Expenses",     section: "OPERATING EXPENSES", rt: "subtotal", isSum: false },
     { key: "pbt",  label: "Net Profit Before Tax",  section: "NET_PROFIT_BEFORE",  rt: "summary",  isSum: true  },

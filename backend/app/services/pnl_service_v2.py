@@ -12,29 +12,15 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from app.db.database import run
 from app.models.schemas import PnlResponse, PnlRow
+from app.services.pnl_templates import GP_INCOME_TAGS, template_for
 
 D = Decimal
 
-# Ordered structure of the new P&L. Each entry is either:
-#   ("single", tag, label)        -> one category, own row, own detail children
-#   ("group", [tags], label)      -> umbrella row, children = one row per tag inside
-# "gp_component"/"oi_component"/"opex_component" mark which roll-up each
-# belongs to, used purely for the Gross Profit / PBT / PAT formulas below.
+# The line structure (which tags, in what order, in which block) is each
+# entity's own MA report template — see pnl_templates.py. Gross Profit /
+# PBT / PAT are computed from those blocks below.
 
-GP_TAGS = ["rev", "cos", "other cos", "bse"]  # each its own top-level row
 MFRS_TAGS = {"rev": "SALES", "cos": "PURCHASE"}  # which top-level tags get an MFRS child branch
-
-OI_TAGS = ["oi", "mgmt inc", "rent inc", "div inc", "sponsor inc",
-           "subsidy inc", "ppe gain", "fx gain"]
-
-OPEX_TAGS = ["payroll", "bonus", "tr loss", "subsi loss", "ppe loss",
-             "commission", "dir pay", "dir fee", "insurance", "travel",
-             "oe", "prof", "fc", "ent", "fx loss", "depr", "sponsorship",
-             "welfare", "rental", "bc", "it", "subscription", "advertising",
-             "utilities", "recruitment", "maintenance", "marketing", "mgmt",
-             "training"]
-
-TAX_TAGS = ["tax pl"]
 
 # Fallback display names — only used if a tag's display_label is NULL
 # in account_pnl_tags (shouldn't normally happen once the table is
@@ -42,9 +28,14 @@ TAX_TAGS = ["tax pl"]
 # an account before its display_label is set).
 DEFAULT_TAG_LABELS = {
     "rev": "Sales",
-    "cos": "Cost of Goods Sold",
+    "bsei": "Business Support Income",
+    "cos": "Cost of Sales",
     "other cos": "Other COS",
+    "payroll cos": "Payroll COS",
     "bse": "Business Support Expense",
+    "event": "Event Expenses",
+    "support": "Sales Support",
+    "comm": "Commission",
     "oi": "Miscellaneous Income",
     "mgmt inc": "Management Fee Income",
     "rent inc": "Rental Income",
@@ -102,14 +93,24 @@ class PnlServiceV2:
 
         # ── Raw GL, tagged via account_pnl_tags (read-time join — no
         # changes to dim_account or the curated/staging pipeline at all).
-        # MFRS-managed transactions (fact_split with both dates set) are
-        # EXCLUDED here — they're represented only via the MFRS branch
-        # below, never double-counted against their own account's raw row.
+        # Only LOCKED MFRS transactions are excluded here: those are counted
+        # through the MFRS branch below (RR_mfrs is written when a period is
+        # locked), never double-counted against their own account's row.
+        # A split that has dates but isn't locked yet still counts in its
+        # account line — otherwise it would be in neither place until the
+        # period is locked.
+        # Sign: like the MA report, each line nets ALL its accounts. Sales
+        # adjustment accounts (SA: Return Inwards, Discount Allowed) sit inside
+        # the Sales line here, so they use the sales sign (cr-dr) and come out
+        # negative, reducing Sales. (Classic P&L keeps SA as dr-cr because it
+        # shows Return Inwards as its own section and subtracts it.) Purchase
+        # returns / discounts received are CO accounts with credit balances,
+        # so dr-cr already makes them reduce Cost of Sales.
         gl = run(db, f"""
             SELECT gl.acc_no, gl.acc_desc, pt.pnl_tag,
                 YEAR(gl.trans_date) yr, MONTH(gl.trans_date) mo,
                 SUM(CASE gl.acc_type
-                    WHEN 'SL' THEN gl.home_cr-gl.home_dr WHEN 'SA' THEN gl.home_dr-gl.home_cr
+                    WHEN 'SL' THEN gl.home_cr-gl.home_dr WHEN 'SA' THEN gl.home_cr-gl.home_dr
                     WHEN 'CO' THEN gl.home_dr-gl.home_cr WHEN 'OI' THEN gl.home_cr-gl.home_dr
                     WHEN 'EP' THEN gl.home_dr-gl.home_cr WHEN 'TX' THEN gl.home_dr-gl.home_cr
                     ELSE gl.home_dr-gl.home_cr END) net_amount
@@ -122,6 +123,7 @@ class PnlServiceV2:
                   SELECT 1 FROM curated_acc_{entity}.fact_split fs
                   WHERE fs.gl_dtl_key = gl.source_key
                     AND fs.is_manual_line = 0
+                    AND fs.is_locked = 1
                     AND fs.start_date IS NOT NULL
                     AND fs.end_date IS NOT NULL
               )
@@ -167,6 +169,11 @@ class PnlServiceV2:
             WHERE acc_no IS NOT NULL
         """, {})
         acc_desc_by_no = {r["acc_no"]: r["acc_desc"] for r in acc_desc_rows}
+        # Accounts with no GL lines at all (listed at zero, see below) get
+        # their name from the account master instead.
+        for r in run(db, f"SELECT acc_no, acc_desc FROM curated_acc_{entity}.dim_account", {}):
+            if r["acc_desc"] and r["acc_no"] not in acc_desc_by_no:
+                acc_desc_by_no[r["acc_no"]] = r["acc_desc"]
 
         # ── Category display names, sourced from account_pnl_tags itself
         # (display_label column) — editable via SQL/an admin UI with no
@@ -232,7 +239,18 @@ class PnlServiceV2:
             return year_rows
 
         # ── Aggregate raw GL by tag + account ──
+        # Every account tagged for this entity is listed under its line, at
+        # zero when it has no amount in the period, so a line always shows
+        # the same accounts (like the MA report).
         by_tag_acc = {}
+        tagged = run(db, """
+            SELECT acc_no, pnl_tag FROM ops_QM.account_pnl_tags
+            WHERE entity = :entity
+        """, {"entity": entity})
+        for t in tagged:
+            by_tag_acc.setdefault(t["pnl_tag"], {}).setdefault(
+                t["acc_no"], {"label": acc_desc_by_no.get(t["acc_no"], t["acc_no"]), "months": [D(0)] * n}
+            )
         for r in gl:
             tag, acc_no = r["pnl_tag"], r["acc_no"]
             by_tag_acc.setdefault(tag, {}).setdefault(
@@ -300,21 +318,21 @@ class PnlServiceV2:
 
         result = []
 
-        # ── Gross Profit block ──
-        rev_row = build_tag_row("rev", tag_label("rev"), 10, mfrs_jt="SALES")
-        cos_row = build_tag_row("cos", tag_label("cos"), 20, mfrs_jt="PURCHASE")
-        other_cos_row = build_tag_row("other cos", tag_label("other cos"), 30)
-        bse_row = build_tag_row("bse", tag_label("bse"), 40)
-        result += [rev_row, cos_row, other_cos_row, bse_row]
+        tpl = template_for(entity)
 
-        gp = [rev_row.months[i] - cos_row.months[i] - other_cos_row.months[i] - bse_row.months[i]
-              for i in range(n)]
+        # ── Gross Profit block: one top-level row per template line ──
+        gp = [D(0)] * n
+        for i, tag in enumerate(tpl["gp"]):
+            row = build_tag_row(tag, tag_label(tag), 10 + i, mfrs_jt=MFRS_TAGS.get(tag))
+            result.append(row)
+            sign = 1 if tag in GP_INCOME_TAGS else -1
+            gp = [gp[j] + sign * row.months[j] for j in range(n)]
         result.append(PnlRow(row_type="summary", section="GROSS_PROFIT", sort_order=50,
                               label="Gross Profit / (Loss)", months=gp, total=sum(gp, D(0))))
 
         # ── Other Income / Operating Expenses blocks ──
-        oi_row, oi_total = build_group_row(OI_TAGS, "Other Income", "OTHER_INCOME", 60)
-        opex_row, opex_total = build_group_row(OPEX_TAGS, "Operating Expenses", "OPERATING_EXPENSES", 70)
+        oi_row, oi_total = build_group_row(tpl["oi"], "Other Income", "OTHER_INCOME", 60)
+        opex_row, opex_total = build_group_row(tpl["opex"], "Operating Expenses", "OPERATING_EXPENSES", 70)
         result += [oi_row, opex_row]
 
         pbt = [gp[i] + oi_total[i] - opex_total[i] for i in range(n)]
@@ -322,10 +340,13 @@ class PnlServiceV2:
                               label="Profit / (Loss) Before Tax", months=pbt, total=sum(pbt, D(0))))
 
         # ── Taxation block ──
-        tax_row = build_tag_row("tax pl", tag_label("tax pl"), 90)
-        result.append(tax_row)
+        tax = [D(0)] * n
+        for i, tag in enumerate(tpl["tax"]):
+            tax_row = build_tag_row(tag, tag_label(tag), 90 + i)
+            result.append(tax_row)
+            tax = [tax[j] + tax_row.months[j] for j in range(n)]
 
-        pat = [pbt[i] - tax_row.months[i] for i in range(n)]
+        pat = [pbt[i] - tax[i] for i in range(n)]
         result.append(PnlRow(row_type="summary", section="NET_PROFIT_AFTER", sort_order=100,
                               label="Profit / (Loss) After Tax", months=pat, total=sum(pat, D(0))))
 

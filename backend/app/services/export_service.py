@@ -195,7 +195,7 @@ def _build_pl(wb, db, entity, fd, td):
               fill=GREY_HDR, color=DARK_GREY, size=9)
 
     SEC = {
-        1: "Sales", 2: "Return Inwards", 3: "Cost of Goods Sold",
+        1: "Sales", 2: "Return Inwards", 3: "Cost of Sales",
         4: "Other Income", 5: "Operating Expenses", 6: "Taxation"
     }
     from collections import defaultdict

@@ -9,7 +9,7 @@ from app.models.schemas import PnlResponse, PnlRow
 _SEC = {
     1:{"label":"Sales",              "section":"SALES",             "tag":"rev"},
     2:{"label":"Return Inwards",     "section":"RETURN INWARDS",    "tag":"ri"},
-    3:{"label":"Cost of Goods Sold", "section":"COST OF GOODS SOLD","tag":"cos"},
+    3:{"label":"Cost of Sales",      "section":"COST OF GOODS SOLD","tag":"cos"},
     4:{"label":"Other Income",       "section":"OTHER INCOME",      "tag":"oi"},
     5:{"label":"Operating Expenses", "section":"OPERATING EXPENSES","tag":"ep"},
     6:{"label":"Taxation",           "section":"TAXATION",          "tag":"tx"},

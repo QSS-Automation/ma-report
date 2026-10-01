@@ -7,6 +7,8 @@
 // (cross-checked against how each tab's component actually reads its
 // response), so the UI renders exactly as it would with real data.
 
+import { MOCK_ENTITIES, MOCK_TAG_LABELS, GP_INCOME_TAGS } from "./mockEntityData";
+
 const MN_FULL = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function monthLabels(fromStr, toStr) {
@@ -34,70 +36,145 @@ function monthCols(fromStr, toStr) {
 }
 
 const rand = (min, max) => Math.round(min + Math.random() * (max - min));
-const seedSeries = (n, base, spread) => Array.from({ length: n }, () => rand(base - spread, base + spread));
 
 // ── P&L ──────────────────────────────────────────────────────────────────
-export function mockPnl(entity, from, to) {
-  const labels = monthLabels(from, to);
-  const n = labels.length;
-  const sales = seedSeries(n, 180000, 30000);
-  const ri = seedSeries(n, 4000, 1500);
-  const cogs = seedSeries(n, 70000, 12000);
-  const oi = seedSeries(n, 6000, 2000);
-  const ep = seedSeries(n, 55000, 8000);
-  const tx = seedSeries(n, 9000, 2000);
-  const sum = (arr) => arr.reduce((a, b) => a + b, 0);
-  const netSales = sales.map((v, i) => v - ri[i]);
-  const grossProfit = netSales.map((v, i) => v - cogs[i]);
-  const pbt = grossProfit.map((v, i) => v + oi[i] - ep[i]);
-  const pat = pbt.map((v, i) => v - tx[i]);
+// Both P&L versions are built from the same per-account figures, so Classic
+// and Beta totals agree. Each entity uses its own P&L template and its real
+// P&L accounts (mockEntityData.js, generated from the MA report workbooks).
+// Figures are seeded by entity + account + month, so a month always shows
+// the same number (stable across reloads and between the two versions).
+const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+const addTo = (acc, arr) => arr.forEach((v, i) => { acc[i] += v; });
+function seeded(key) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+const entityOf = (entity) => MOCK_ENTITIES[entity] || MOCK_ENTITIES.QM;
+const tagLabel = (tag) => MOCK_TAG_LABELS[tag] || tag;
+// Typical monthly total per tag for QM; smaller entities are scaled down.
+const TAG_BASE = { rev: 180000, bsei: 6000, cos: 60000, "other cos": 9000, bse: 12000, "payroll cos": 16000,
+  oi: 2500, "fx gain": 600, "mgmt inc": 8000, "rent inc": 3000, payroll: 38000, "dir pay": 14000, bonus: 4000,
+  travel: 3500, oe: 6500, prof: 4500, mgmt: 3000, depr: 1800, "tax pl": 7000 };
+const ENTITY_SCALE = { QM: 1, QA: 0.35, QAW: 0.3, QArmour: 0.25, QOmnitech: 0.22, CC: 0.18, Daltos: 0.4 };
 
-  // Section subtotal/header rows come FIRST, detail rows immediately after —
-  // PnLTable.jsx has no grouping/reordering logic of its own, it just maps
-  // data.rows in array order and expands a section's detail rows in place,
-  // so the backend contract is "header row precedes its own details".
-  // (Detail-before-header here previously made expanded sections render
-  // their detail lines ABOVE the section they belong to.)
+function pnlFigures(entity, from, to) {
+  const labels = monthLabels(from, to);
+  const ent = entityOf(entity);
+  const scale = ENTITY_SCALE[entity] ?? 0.3;
+  const byTag = {};
+  Object.entries(ent.accounts).forEach(([tag, accts]) => {
+    const per = ((TAG_BASE[tag] ?? 1500) * scale) / accts.length;
+    byTag[tag] = accts.map(([acc_no, desc], k) => {
+      // Like real data: ~1 in 4 accounts has no amount at all in the period
+      // (still listed, at zero — the first account of a line always has
+      // some), and ~1 in 5 months has no movement on an active account.
+      const idle = k > 0 && seeded(`${entity}|${acc_no}|idle`) < 0.25;
+      // Returns and discounts (Return Inwards, Discount Allowed / Received,
+      // Purchases Return) reduce their line, as in the MA report: small and
+      // negative.
+      const contra = /RETURN|DISCOUNT/i.test(desc);
+      const months = labels.map(m => {
+        const r = seeded(`${entity}|${acc_no}|${m}`);
+        if (idle || r < 0.2) return 0;
+        return contra ? -Math.round(per * 0.08 * (0.55 + r)) : Math.round(per * (0.55 + r));
+      });
+      return { acc_no, label: desc, tag, months, total: sum(months) };
+    });
+  });
+  // MFRS recognition of earlier invoices — a small add-on to sales / cost of sales.
+  const mfrs = (tag, share) => (byTag[tag] || []).slice(0, 2).map(a => {
+    const months = a.months.map((v, i) => Math.round(v * share * seeded(`${entity}|mfrs|${a.acc_no}|${labels[i]}`)));
+    return { ...a, months, total: sum(months) };
+  });
+  return { labels, n: labels.length, ent, byTag, mfrsRev: mfrs("rev", 0.25), mfrsCos: mfrs("cos", 0.2) };
+}
+
+export function mockPnl(entity, from, to) {
+  const { labels, n, ent, byTag, mfrsRev, mfrsCos } = pnlFigures(entity, from, to);
+  const t = ent.template;
+  const zero = () => Array(n).fill(0);
+  const accountsOf = (tags) => tags.flatMap(tag => byTag[tag] || []);
+  const section = (sec, title, tag, accts) => {
+    const months = zero(); accts.forEach(a => addTo(months, a.months));
+    // Header row first, then its details — PnLTable renders in array order.
+    return { months, rows: [
+      { section: sec, label: title, row_type: "subtotal", months, total: sum(months), tag },
+      ...accts.map(a => ({ section: sec, label: a.label, row_type: "detail", months: a.months, total: a.total, tag })),
+    ] };
+  };
+  const sales = section("SALES", "Total Sales", "rev", [...accountsOf(t.gp.filter(x => GP_INCOME_TAGS.includes(x))), ...mfrsRev]);
+  const ri = zero();
+  const cogs = section("COST OF GOODS SOLD", "Total Cost of Sales", "cos", [...accountsOf(t.gp.filter(x => !GP_INCOME_TAGS.includes(x))), ...mfrsCos]);
+  const oi = section("OTHER INCOME", "Total Other Income", "oi", accountsOf(t.oi));
+  const ep = section("OPERATING EXPENSES", "Total Operating Expenses", "ep", accountsOf(t.opex));
+  const tx = section("TAXATION", "Total Taxation", "tx", accountsOf(t.tax));
+  const netSales = sales.months.map((v, i) => v - ri[i]);
+  const grossProfit = netSales.map((v, i) => v - cogs.months[i]);
+  const pbt = grossProfit.map((v, i) => v + oi.months[i] - ep.months[i]);
+  const pat = pbt.map((v, i) => v - tx.months[i]);
   const rows = [
-    { section: "SALES", label: "Total Sales",            row_type: "subtotal", months: sales, total: sum(sales), tag: "rev" },
-    { section: "SALES", label: "Professional Services", row_type: "detail", months: sales.map(v => Math.round(v * 0.7)), total: sum(sales) * 0.7, tag: "rev" },
-    { section: "SALES", label: "Licence Revenue",        row_type: "detail", months: sales.map(v => Math.round(v * 0.3)), total: sum(sales) * 0.3, tag: "rev" },
-    { section: "RETURN INWARDS", label: "Sales Returns", row_type: "subtotal", months: ri, total: sum(ri), tag: "ri" },
+    ...sales.rows,
+    { section: "RETURN INWARDS", label: "Sales Returns", row_type: "subtotal", months: ri, total: 0, tag: "ri" },
     { section: "NET_SALES", label: "Net Sales", row_type: "net_sales", months: netSales, total: sum(netSales) },
-    { section: "COST OF GOODS SOLD", label: "Total COGS", row_type: "subtotal", months: cogs, total: sum(cogs), tag: "cos" },
-    { section: "COST OF GOODS SOLD", label: "Direct Cost of Services", row_type: "detail", months: cogs, total: sum(cogs), tag: "cos" },
+    ...cogs.rows,
     { section: "GROSS_PROFIT", label: "Gross Profit", row_type: "summary", months: grossProfit, total: sum(grossProfit) },
-    { section: "OTHER INCOME", label: "Total Other Income", row_type: "subtotal", months: oi, total: sum(oi), tag: "oi" },
-    { section: "OTHER INCOME", label: "Interest Income", row_type: "detail", months: oi, total: sum(oi), tag: "oi" },
-    { section: "OPERATING EXPENSES", label: "Total Operating Expenses", row_type: "subtotal", months: ep, total: sum(ep), tag: "ep" },
-    { section: "OPERATING EXPENSES", label: "Staff Costs", row_type: "detail", months: ep.map(v => Math.round(v * 0.6)), total: sum(ep) * 0.6, tag: "ep" },
-    { section: "OPERATING EXPENSES", label: "Office & Admin", row_type: "detail", months: ep.map(v => Math.round(v * 0.4)), total: sum(ep) * 0.4, tag: "ep" },
+    ...oi.rows,
+    ...ep.rows,
     { section: "NET_PROFIT_BEFORE", label: "Net Profit Before Tax", row_type: "summary", months: pbt, total: sum(pbt) },
-    { section: "TAXATION", label: "Total Taxation", row_type: "subtotal", months: tx, total: sum(tx), tag: "tx" },
-    { section: "TAXATION", label: "Taxation", row_type: "detail", months: tx, total: sum(tx), tag: "tx" },
+    ...tx.rows,
     { section: "NET_PROFIT_AFTER", label: "Net Profit After Tax", row_type: "summary", months: pat, total: sum(pat) },
   ];
-
   return { entity, month_labels: labels, rows };
 }
 
+// Same tree shape as the backend's pnl_service_v2: one top-level row per
+// template line (accounts as children; Sales / Cost of Sales also carry an
+// MFRS branch), Other Income and Operating Expenses as umbrella rows of
+// per-tag rows, then the summary rows.
 export function mockPnlV2(entity, from, to) {
-  const base = mockPnl(entity, from, to);
-  // v2's Row renderer walks row.children recursively — nest the same figures.
-  const group = (label, section, months, total, children) => ({ section, label, row_type: "detail", months, total, children });
-  return {
-    entity,
-    month_labels: base.month_labels,
-    rows: [
-      group("Sales", "SALES", base.rows[0].months, base.rows[0].total, [
-        { section: "SALES", label: "Professional Services", row_type: "detail", months: base.rows[1].months, total: base.rows[1].total },
-        { section: "SALES", label: "Licence Revenue", row_type: "detail", months: base.rows[2].months, total: base.rows[2].total },
-      ]),
-      { section: "GROSS_PROFIT", label: "Gross Profit", row_type: "summary", months: base.rows[7].months, total: base.rows[7].total },
-      { section: "NET_PROFIT_BEFORE", label: "Net Profit Before Tax", row_type: "summary", months: base.rows[13].months, total: base.rows[13].total },
-      { section: "NET_PROFIT_AFTER", label: "Net Profit After Tax", row_type: "summary", months: base.rows[16].months, total: base.rows[16].total },
-    ],
+  const { labels, n, ent, byTag, mfrsRev, mfrsCos } = pnlFigures(entity, from, to);
+  const t = ent.template;
+  const zero = () => Array(n).fill(0);
+  const detail = (sec, a) => ({ row_type: "detail", section: sec, acc_no: a.acc_no, label: a.label, tag: a.tag, months: a.months, total: a.total });
+  const mfrsBranch = (accts) => {
+    if (!accts.length) return [];
+    const months = zero(); accts.forEach(a => addTo(months, a.months));
+    return [{ row_type: "mfrs", section: "MFRS", label: "MFRS 2025 Recognition", tag: "mfrs", months, total: sum(months),
+      children: accts.map(a => ({ ...detail("MFRS", a), tag: "mfrs" })) }];
   };
+  const tagRow = (tag, sec) => {
+    const children = (byTag[tag] || []).map(a => detail(sec || tag.toUpperCase(), a));
+    if (tag === "rev") children.push(...mfrsBranch(mfrsRev));
+    if (tag === "cos") children.push(...mfrsBranch(mfrsCos));
+    const months = zero(); children.forEach(c => addTo(months, c.months));
+    return { row_type: "subtotal", section: sec || tag.toUpperCase(), label: tagLabel(tag), tag, months, total: sum(months), children };
+  };
+  const groupRow = (tags, label, sec) => {
+    const children = tags.map(tag => tagRow(tag, sec));
+    const months = zero(); children.forEach(c => addTo(months, c.months));
+    return { row_type: "subtotal", section: sec, label, tag: null, months, total: sum(months), children };
+  };
+  const summary = (sec, label, months) => ({ row_type: "summary", section: sec, label, months, total: sum(months) });
+
+  const rows = [];
+  const gp = zero();
+  t.gp.forEach(tag => {
+    const r = tagRow(tag); rows.push(r);
+    const sign = GP_INCOME_TAGS.includes(tag) ? 1 : -1;
+    r.months.forEach((v, i) => { gp[i] += sign * v; });
+  });
+  rows.push(summary("GROSS_PROFIT", "Gross Profit / (Loss)", gp));
+  const oi = groupRow(t.oi, "Other Income", "OTHER_INCOME");
+  const opex = groupRow(t.opex, "Operating Expenses", "OPERATING_EXPENSES");
+  rows.push(oi, opex);
+  const pbt = gp.map((v, i) => v + oi.months[i] - opex.months[i]);
+  rows.push(summary("NET_PROFIT_BEFORE", "Profit / (Loss) Before Tax", pbt));
+  const tax = zero();
+  t.tax.forEach(tag => { const r = tagRow(tag); rows.push(r); addTo(tax, r.months); });
+  rows.push(summary("NET_PROFIT_AFTER", "Profit / (Loss) After Tax", pbt.map((v, i) => v - tax[i])));
+  return { entity, month_labels: labels, rows };
 }
 
 // ── Balance Sheet ────────────────────────────────────────────────────────
@@ -365,10 +442,8 @@ export function mockOrderListEnhanced() {
 
 // ── Small/misc endpoints ────────────────────────────────────────────────
 export const mockConfig = (entity) => ({ entity, staging_refreshed_at: new Date(Date.now() - 42 * 60000).toISOString() });
-export const mockEntities = () => ([
-  { entity_code: "QM", display_name: "Quandatics Malaysia" },
-  { entity_code: "QArmour", display_name: "QArmour Sdn Bhd" },
-]);
+export const mockEntities = () =>
+  Object.entries(MOCK_ENTITIES).map(([entity_code, e]) => ({ entity_code, display_name: e.name }));
 export const mockAccounts = () => ({ accounts: [
   { acc_no: "1000", acc_desc: "Office Equipment" },
   { acc_no: "4000", acc_desc: "Trade Payables" },
