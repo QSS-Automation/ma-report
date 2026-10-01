@@ -721,6 +721,11 @@ export default function InvoiceTab({tab,entity="QM"}){
                   const hdr=Number(inv.home_dr),hcr=Number(inv.home_cr),amt=Number(inv.amount);
                   const isEx=expanded[inv.source_key];
 
+                  // A main line that is split (or being split) is only a parent:
+                  // Type, End User, dates, Days and Remark belong to its split
+                  // lines, so the main line shows no entry fields for them.
+                  const splitMain=isMultiSplit||!!inDraft;
+                  const dash=<span className="text-muted-foreground">—</span>;
                   let typeBdg;
                   const savedCat=inv.category||getRow(inv.source_key,"cat","");
                   if(isMultiSplit){
@@ -728,6 +733,8 @@ export default function InvoiceTab({tab,entity="QM"}){
                       onClick={()=>toggleExpand(inv.source_key)}>
                       Split {isEx?"▲":"▼"}
                     </Badge>;
+                  }else if(inDraft){
+                    typeBdg=<Badge variant="muted">Split</Badge>;
                   }else if(inEdit){
                     typeBdg=<select className={catSelCls} value={inEdit.cat}
                       onChange={e=>updateEdit(inv.source_key,"cat",e.target.value)}>
@@ -794,8 +801,8 @@ export default function InvoiceTab({tab,entity="QM"}){
                                 style={{width:90}}/>
                             :singleSplit
                               ?<span className="text-[12px] text-foreground/80">{singleSplit.end_user||"—"}</span>
-                              :hasSplit
-                                ?<span className="text-muted-foreground">—</span>
+                              :splitMain
+                                ?dash
                                 :<Input type="text" className="h-6 px-1.5 text-[12px]"
                                     value={getRow(inv.source_key,"eu")} readOnly={reallyLocked}
                                     placeholder="End user"
@@ -810,9 +817,11 @@ export default function InvoiceTab({tab,entity="QM"}){
                                 onChange={v=>updateEdit(inv.source_key,"sd",v)}/>
                             :singleSplit
                               ?<span className="text-[12px] text-foreground/80">{singleSplit.start_date?fmtDateShort(singleSplit.start_date):"—"}</span>
-                              :<DateField className="h-6" tone={!hasSplit?"primary":undefined}
-                                value={getRow(inv.source_key,"sd")} readOnly={reallyLocked||isMultiSplit}
-                                onChange={v=>updateRow(inv.source_key,"sd",v)}/>}
+                              :splitMain
+                                ?dash
+                                :<DateField className="h-6" tone="primary"
+                                  value={getRow(inv.source_key,"sd")} readOnly={reallyLocked}
+                                  onChange={v=>updateRow(inv.source_key,"sd",v)}/>}
                         </td>
 
                         {/* End Date */}
@@ -822,10 +831,12 @@ export default function InvoiceTab({tab,entity="QM"}){
                                 onChange={v=>updateEdit(inv.source_key,"ed",v)}/>
                             :singleSplit
                               ?<span className="text-[12px] text-foreground/80">{singleSplit.end_date?fmtDateShort(singleSplit.end_date):"—"}</span>
-                              :<DateField className="h-6" tone={!hasSplit?"primary":undefined}
-                                value={getRow(inv.source_key,"ed")} readOnly={reallyLocked||isMultiSplit}
-                                copyFrom={getRow(inv.source_key,"sd")} pasteOnly={getRow(inv.source_key,"sd")}
-                                onChange={v=>updateRow(inv.source_key,"ed",v)}/>}
+                              :splitMain
+                                ?dash
+                                :<DateField className="h-6" tone="primary"
+                                  value={getRow(inv.source_key,"ed")} readOnly={reallyLocked}
+                                  copyFrom={getRow(inv.source_key,"sd")} pasteOnly={getRow(inv.source_key,"sd")}
+                                  onChange={v=>updateRow(inv.source_key,"ed",v)}/>}
                         </td>
 
                         {/* Days */}
@@ -835,7 +846,9 @@ export default function InvoiceTab({tab,entity="QM"}){
                               return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";})()
                             :singleSplit
                               ?singleSplit.total_days||"—"
-                              :(()=>{const sd=getRow(inv.source_key,"sd"),ed=getRow(inv.source_key,"ed");
+                              :splitMain
+                                ?"—"
+                                :(()=>{const sd=getRow(inv.source_key,"sd"),ed=getRow(inv.source_key,"ed");
                                 return sd&&ed?Math.round((new Date(ed)-new Date(sd))/86400000)+1:"—";})()}
                         </td>
 
@@ -846,8 +859,8 @@ export default function InvoiceTab({tab,entity="QM"}){
                                 onChange={v=>updateEdit(inv.source_key,"rm",v)}/>
                             :singleSplit
                               ?<span className="text-[12px] text-muted-foreground">{singleSplit.remark||"—"}</span>
-                              :hasSplit
-                                ?<span className="text-muted-foreground">—</span>
+                              :splitMain
+                                ?dash
                                 :<RemarkField value={getRow(inv.source_key,"rm")} readOnly={reallyLocked} context={`${inv.ref_no1||"Invoice"} · ${inv.acc_desc||""}`}
                                     onChange={v=>updateRow(inv.source_key,"rm",v)}/>}
                         </td>
@@ -883,7 +896,11 @@ export default function InvoiceTab({tab,entity="QM"}){
                       </tr>
 
                       {/* ── Existing multi-split rows ── */}
-                      {isMultiSplit&&isEx&&inv.splits.map((line,li)=>(
+                      {/* While a split is being edited (✎ Edit → inDraft), the
+                          editable draft lines below take these rows' place, so
+                          the lines turn editable where they are instead of a
+                          second copy appearing underneath. */}
+                      {isMultiSplit&&isEx&&!inDraft&&inv.splits.map((line,li)=>(
                         <tr key={"s"+li} className={cn("border-b border-border/40",reallyLocked?SPLIT_LOCKED_BG:SPLIT_BG)}>
                           {/* One cell per header column so every value sits under
                               the same column as the invoice row above it. */}
@@ -916,7 +933,7 @@ export default function InvoiceTab({tab,entity="QM"}){
                           <td/>
                         </tr>
                       ))}
-                      {isMultiSplit&&isEx&&(
+                      {isMultiSplit&&isEx&&!inDraft&&(
                         <tr className={cn("border-b-2",reallyLocked?"border-destructive/30 bg-destructive/10":"border-border bg-accent/20")}>
                           <td colSpan={colSpanFull-3} className="text-right">
                             <span className="text-[11px] font-semibold text-success">
