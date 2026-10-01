@@ -198,10 +198,13 @@ function mockInvoices(entity, from, to, isSales) {
       // banner, and the unlock-request flow can all be reviewed — InvoiceTab
       // derives "locked" from split.is_locked, not from a separate endpoint.
       splits: i % 5 === 0 ? [
-        { category: "PS", amount: Math.round(amount * 0.6), net_amount: Math.round(amount * 0.6), is_locked: i % 10 === 0 },
-        { category: "LIC", amount: Math.round(amount * 0.4), net_amount: Math.round(amount * 0.4), is_locked: i % 10 === 0 },
+        { category: "PS", amount: Math.round(amount * 0.6), net_amount: Math.round(amount * 0.6), is_locked: i % 10 === 0,
+          end_user: "Celcom Axiata", start_date: "2026-07-01", end_date: "2026-12-31", total_days: 184, remark: "Implementation phase" },
+        { category: "LIC", amount: Math.round(amount * 0.4), net_amount: Math.round(amount * 0.4), is_locked: i % 10 === 0,
+          end_user: "Maxis Berhad", start_date: "2026-07-01", end_date: "2027-06-30", total_days: 365, remark: "Annual licence" },
       ] : (i === 2 || i === 8) ? [
-        { category: cat || "PS", amount, net_amount: amount, is_locked: true },
+        { category: cat || "PS", amount, net_amount: amount, is_locked: true,
+          end_user: "Petronas Digital", start_date: "2026-08-01", end_date: "2027-07-31", total_days: 365, remark: "Support retainer" },
       ] : [],
     };
   });

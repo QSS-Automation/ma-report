@@ -127,6 +127,12 @@ const FZ_EDGE = "shadow-[6px_0_8px_-6px_rgba(0,0,0,0.18)]";
 // Opaque stand-ins for the translucent split-row tints, for frozen cells.
 const SPLIT_BG = "bg-[color-mix(in_srgb,hsl(var(--accent))_40%,hsl(var(--card)))]";
 const SPLIT_LOCKED_BG = "bg-red-50 dark:bg-red-950";
+// Rows are rendered in batches: a long period can hold thousands of lines,
+// each with several inputs and frozen cells, and mounting them all at once
+// is what made scrolling (and typing) lag. More rows mount as the user
+// scrolls near the bottom; totals, filters, search and CSV export still use
+// every row.
+const ROW_BATCH = 100;
 
 const catSelCls = "h-6 rounded-md border border-primary/40 bg-card px-1.5 text-[12px]";
 const newLineLblCls = "text-[10px] font-bold uppercase tracking-wide text-success/80";
@@ -193,6 +199,7 @@ export default function InvoiceTab({tab,entity="QM"}){
     setSplitState(p=>({...p,[sk]:{lines:splits.map(s=>({
       cat: s.category||"PS",
       amt: String(s.net_amount||""),
+      eu:  s.end_user||"",
       sd:  s.start_date||"",
       ed:  s.end_date||"",
       rm:  s.remark||"",
@@ -306,11 +313,23 @@ export default function InvoiceTab({tab,entity="QM"}){
   const chProps={sortKey,sortDir,colFilter,openMenu,
     onSort:handleSort,onFilter:handleFilter,onMenu:setOpenMenu,getUnique};
 
-  const openSplit=sk=>setSplitState(p=>({...p,[sk]:{lines:[
-    {cat:"PS",amt:"",sd:"",ed:"",rm:""},
-    {cat:"LIC",amt:"",sd:"",ed:"",rm:""}
-  ]}}));
-  const addSplitLine=sk=>setSplitState(p=>({...p,[sk]:{lines:[...(p[sk]?.lines||[]),{cat:"PS",amt:"",sd:"",ed:"",rm:""}]}}));
+  // End User and Remark already typed on the unsplit row carry into every
+  // split line, so splitting never throws them away; each line can then be
+  // changed on its own.
+  const openSplit=sk=>{
+    const eu=getRow(sk,"eu"),rm=getRow(sk,"rm");
+    setSplitState(p=>({...p,[sk]:{lines:[
+      {cat:"PS",amt:"",eu,sd:"",ed:"",rm},
+      {cat:"LIC",amt:"",eu,sd:"",ed:"",rm}
+    ]}}));
+  };
+  const addSplitLine=sk=>setSplitState(p=>{
+    const lines=p[sk]?.lines||[];
+    const last=lines[lines.length-1];
+    const eu=last?last.eu||"":getRow(sk,"eu");
+    const rm=last?last.rm||"":getRow(sk,"rm");
+    return{...p,[sk]:{lines:[...lines,{cat:"PS",amt:"",eu,sd:"",ed:"",rm}]}};
+  });
   const removeSplitLine=(sk,idx)=>setSplitState(p=>{
     const lines=[...(p[sk]?.lines||[])];lines.splice(idx,1);return{...p,[sk]:{lines}};
   });
@@ -326,6 +345,7 @@ export default function InvoiceTab({tab,entity="QM"}){
       const res=await saveSplits({source_key:sk,journal_type:tab==="sales"?"SALES":"PURCHASE",
         user:user?.user_id||"user",entity,
         splits:lines.map(l=>({category:l.cat,split_amount:parseFloat(l.amt)||0,
+          end_user:l.eu||null,
           start_date:l.sd||null,end_date:l.ed||null,remark:l.rm||null}))});
       if(res.data.status==="error"){showToast("⚠ "+res.data.message);return;}
       showToast("✓ Split saved");
@@ -481,39 +501,37 @@ export default function InvoiceTab({tab,entity="QM"}){
   const FROZEN=isSales?7:8;
   const headRowRef=useRef(null);
 
-  // Column sizing: the first time invoices arrive, lock each column to the
-  // width its content needs, and give the table an explicit total width.
-  // With table-layout:fixed that makes the widths authoritative, so the
-  // resize handles can widen AND narrow columns (text then ends in "…").
-  // Content width is measured from the body rows too — a fixed layout only
-  // sizes columns from the header row, which clipped the Action buttons and
-  // the date/remark fields. Long text columns are capped (COL_CAP) and
-  // simply truncate. Done once per tab, so the user's resizing survives.
+  // Column sizing: every column starts at its fixed default width (the
+  // minWidth declared on its header — sized to the widest control the column
+  // can hold, so Action buttons and date/remark fields never clip). Long
+  // text is cut with "…" (hover shows it in full) and the user drags a
+  // header's edge to widen a column when needed. Widths no longer grow to
+  // fit the data: with long real descriptions that made the frozen columns
+  // wider than the screen. The table gets an explicit total width because
+  // table-layout:fixed needs one for the widths to stick. Done once per tab,
+  // so the user's resizing survives reloads of the data.
   const sizedRef=useRef(false);
   useLayoutEffect(()=>{
     const row=headRowRef.current;
     if(sizedRef.current||!row||!invoices.length) return;
     const table=row.closest("table");
-    const ths=[...row.children];
-    const COL_CAP=320;
-    const bodyRows=[...(table.tBodies[0]?.rows||[])].filter(r=>r.cells.length===ths.length).slice(0,80);
-    const widths=ths.map((th,i)=>{
-      // Never below the column's declared minimum: the browser squeezes an
-      // auto-width table to the screen before sizing, which can shrink a
-      // column (e.g. Action) below its widest button state.
-      let w=Math.max(th.offsetWidth,Number(th.dataset.minw)||0);
-      if(i<ths.length-1) bodyRows.forEach(r=>{ w=Math.max(w,Math.min(r.cells[i].scrollWidth+2,COL_CAP)); });
-      return Math.ceil(w);
-    });
-    ths.forEach((th,i)=>{
-      if(i===ths.length-1) return; // trailing filler column takes any leftover space
-      th.style.width=widths[i]+"px";
-      th.style.minWidth=widths[i]+"px";
-    });
-    const sum=widths.slice(0,-1).reduce((a,b)=>a+b,0);
+    const ths=[...row.children].slice(0,-1); // trailing filler column takes any leftover space
+    const widths=ths.map(th=>Number(th.dataset.minw)||th.offsetWidth);
+    ths.forEach((th,i)=>{ th.style.width=widths[i]+"px"; th.style.minWidth=widths[i]+"px"; });
+    const sum=widths.reduce((a,b)=>a+b,0);
     table.style.width=Math.max(sum,table.parentElement.clientWidth)+"px";
     sizedRef.current=true;
   },[invoices.length]);
+
+  // Batched rendering (see ROW_BATCH). Any change to which rows are listed
+  // starts again from the first batch.
+  const [shown,setShown]=useState(ROW_BATCH);
+  useEffect(()=>{setShown(ROW_BATCH);},[invoices,search,colFilter,sortKey,sortDir]);
+  const onTableScroll=e=>{
+    const el=e.currentTarget;
+    if(shown<filtered.length&&el.scrollTop+el.clientHeight>=el.scrollHeight-600)
+      setShown(s=>s+ROW_BATCH);
+  };
   // The table's scroll box ends at the bottom of the window, so its
   // horizontal scrollbar is always on screen (it used to sit below the fold
   // until the whole page was scrolled). Measured from the box's position
@@ -652,7 +670,7 @@ export default function InvoiceTab({tab,entity="QM"}){
             </div>
 
             {/* Own scroll area: the header row stays visible while invoice lines scroll. */}
-            <div ref={scrollRef} className="min-h-[320px] w-full overflow-auto" style={{maxHeight:tableMaxH}}>
+            <div ref={scrollRef} onScroll={onTableScroll} className="min-h-[320px] w-full overflow-auto" style={{maxHeight:tableMaxH}}>
               <table className="table-fixed border-collapse text-[13px] [&_td]:overflow-hidden [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_td]:px-2.5 [&_td]:py-2 [&_td]:align-middle">
               <thead className="sticky top-0 z-30">
                 <tr ref={headRowRef}>
@@ -681,7 +699,7 @@ export default function InvoiceTab({tab,entity="QM"}){
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(inv=>{
+                {filtered.slice(0,shown).map(inv=>{
                   const locked=isLocked(inv.trans_date);
                   const hasSplit=inv.splits&&inv.splits.length>0;
                   const isMultiSplit=inv.splits&&inv.splits.length>1;
@@ -738,14 +756,14 @@ export default function InvoiceTab({tab,entity="QM"}){
                         <td {...FZ(0,"text-muted-foreground")}>
                           {fmtDateShort(inv.trans_date)}
                         </td>
-                        <td {...FZ(1,"font-mono text-[11px] text-muted-foreground")}>{inv.acc_no||"—"}</td>
-                        <td {...FZ(2,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")}>
+                        <td {...FZ(1,"font-mono text-[11px] text-muted-foreground")} title={inv.acc_no||undefined}>{inv.acc_no||"—"}</td>
+                        <td {...FZ(2,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")} title={inv.acc_desc||undefined}>
                           {inv.acc_desc||"—"}
                         </td>
-                        <td {...FZ(3,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")}>
+                        <td {...FZ(3,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")} title={inv.de_acc_desc||undefined}>
                           {inv.de_acc_desc||"—"}
                         </td>
-                        <td {...FZ(4,"font-mono text-[11px]")}>{inv.proj_no||"—"}</td>
+                        <td {...FZ(4,"font-mono text-[11px]")} title={inv.proj_no||undefined}>{inv.proj_no||"—"}</td>
                         <td {...FZ(5,"font-mono")}>
                           {invoiceLinks&&inv.ref_no1&&linkRef(inv)
                             ?<button type="button" onClick={()=>openInvoice(inv)}
@@ -758,8 +776,8 @@ export default function InvoiceTab({tab,entity="QM"}){
                               ?<>🔒 {inv.ref_no1}</>
                               :<span className="text-primary">{inv.ref_no1||"—"}</span>}
                         </td>
-                        {!isSales&&<td {...FZ(6,"font-mono text-[11px] text-muted-foreground")}>{inv.ref_no2||"—"}</td>}
-                        <td {...FZ(FROZEN-1,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")}>
+                        {!isSales&&<td {...FZ(6,"font-mono text-[11px] text-muted-foreground")} title={inv.ref_no2||undefined}>{inv.ref_no2||"—"}</td>}
+                        <td {...FZ(FROZEN-1,"overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground")} title={inv.description||undefined}>
                           {inv.description||"—"}
                         </td>
                         <td className={cn("text-right font-mono",hasSplit&&"line-through text-muted-foreground/70")}>{fmtMYR(hdr)}</td>
@@ -893,7 +911,7 @@ export default function InvoiceTab({tab,entity="QM"}){
                           <td><DateField className="h-6" defaultValue={line.start_date||""} readOnly={reallyLocked}/></td>
                           <td><DateField className="h-6" defaultValue={line.end_date||""} readOnly={reallyLocked} copyFrom={line.start_date||""} pasteOnly={line.start_date||""}/></td>
                           <td className="text-right font-mono text-muted-foreground">{line.total_days||"—"}</td>
-                          <td><span className="text-[12px] text-muted-foreground">{line.remark||"—"}</span></td>
+                          <td><span className="text-[12px] text-muted-foreground" title={line.remark||undefined}>{line.remark||"—"}</span></td>
                           <td/>{/* Action */}
                           <td/>
                         </tr>
@@ -904,13 +922,15 @@ export default function InvoiceTab({tab,entity="QM"}){
                             <span className="text-[11px] font-semibold text-success">
                               ✓ {inv.splits.map(l=>fmtMYR(Number(l.net_amount))).join(" + ")} = {fmtMYR(amt)}
                             </span>
-                            &nbsp;&nbsp;
+                          </td>
+                          <td/>{/* Remark */}
+                          <td className="whitespace-nowrap ![text-overflow:clip]">
                             {!reallyLocked&&<Button variant="outline" size="sm" className="h-6 border-primary/40 px-2 text-[11px] text-primary"
                               onClick={()=>startMultiEdit(inv.source_key,inv.splits)}>
                               ✎ Edit
                             </Button>}
                           </td>
-                          <td colSpan={3}/>
+                          <td/>
                         </tr>
                       )}
 
@@ -943,7 +963,13 @@ export default function InvoiceTab({tab,entity="QM"}){
                                 {CAT_OPTIONS_NO_BLANK}
                               </select>
                             </td>
-                            <td><span className="text-muted-foreground">—</span></td>{/* End User */}
+                            {/* End User */}
+                            <td>
+                              <Input type="text" className="h-6 border-primary/40 px-1.5 text-[12px]"
+                                value={line.eu||""} placeholder="End user"
+                                onChange={e=>updateSplitLine(inv.source_key,li,"eu",e.target.value)}
+                                style={{width:90}}/>
+                            </td>
                             <td>
                               <DateField className="h-6" tone="primary" value={line.sd}
                                 onChange={v=>updateSplitLine(inv.source_key,li,"sd",v)}/>
@@ -957,7 +983,7 @@ export default function InvoiceTab({tab,entity="QM"}){
                               <RemarkField tone="primary" width={96} value={line.rm||""} context={`${inv.ref_no1||"Invoice"} · split line ${li+1}`}
                                 onChange={v=>updateSplitLine(inv.source_key,li,"rm",v)}/>
                             </td>
-                            <td className="whitespace-nowrap">
+                            <td className="whitespace-nowrap ![text-overflow:clip]">
                               <Button variant="outline" size="sm" className="h-6 border-destructive/40 px-2 text-[11px] text-destructive" onClick={()=>removeSplitLine(inv.source_key,li)}>✕</Button>
                             </td>
                             <td/>
@@ -976,7 +1002,8 @@ export default function InvoiceTab({tab,entity="QM"}){
                               &nbsp;&nbsp;
                               <Button variant="outline" size="sm" className="h-6 border-dashed border-primary/40 px-2 text-[11px] text-primary" onClick={()=>addSplitLine(inv.source_key)}>+ Add line</Button>
                             </td>
-                            <td colSpan={2} className="whitespace-nowrap text-right">
+                            <td/>{/* Remark */}
+                            <td className="whitespace-nowrap ![text-overflow:clip]">
                               <Button size="sm" className="mr-1 h-6 px-2 text-[11px]" onClick={()=>saveSplit_(inv.source_key,amt)}>Save split</Button>
                               <Button variant="outline" size="sm" className="h-6 border-destructive/40 px-2 text-[11px] text-destructive" onClick={()=>setSplitState(p=>{const n={...p};delete n[inv.source_key];return n;})}>Cancel</Button>
                             </td>
@@ -988,6 +1015,17 @@ export default function InvoiceTab({tab,entity="QM"}){
                   );
                 })}
 
+                {shown<filtered.length&&(
+                  <tr>
+                    <td colSpan={colSpanFull} className="py-3 text-left text-[12px] text-muted-foreground">
+                      <span className="sticky left-3">
+                        Showing {shown.toLocaleString()} of {filtered.length.toLocaleString()} invoices · scroll down to load more&nbsp;&nbsp;
+                        <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]"
+                          onClick={()=>setShown(s=>s+ROW_BATCH)}>Load more</Button>
+                      </span>
+                    </td>
+                  </tr>
+                )}
                 {filtered.length===0&&(loading ? (
                   Array.from({length:6}).map((_,i)=>(
                     <tr key={"sk"+i}><td colSpan={colSpanFull+1} className="px-4 py-2"><Skeleton className="h-4 w-full"/></td></tr>
