@@ -59,7 +59,7 @@ export const createTask     = (data)                   => MOCK ? asResponse({ st
 export const updateTask     = (id, data)               => MOCK ? asResponse({ status: "ok" })                    : API.patch(`/api/tasks/${id}`,           data);
 export const getOrderList   = (entity)                 => MOCK ? asResponse(mock.mockOrderList())                : API.get("/api/order-list", { params: { entity } });
 export const unlockSplit = (data) => MOCK ? asResponse({ status: "ok" }) : API.post("/api/mfrs/unlock", data);
-export const exportExcel = (entity, from, to)          => API.get("/api/export/excel", {params: { entity, from_date: from, to_date: to },responseType: 'blob'});
+export const exportExcel = (entity, from, to, version = "v2") => API.get("/api/export/excel", {params: { entity, from_date: from, to_date: to, version },responseType: 'blob'});
 export const getAccounts = (entity, jt)                => MOCK ? asResponse(mock.mockAccounts())                 : API.get("/api/adjustment/accounts", { params: { entity, journal_type: jt } });
 export const getOrderListEnhanced = (entity, level)    => MOCK ? asResponse(mock.mockOrderListEnhanced())        : API.get("/api/order-list-enhanced", { params: { entity, level } });
 export const linkPoToSo     = (data)                   => MOCK ? asResponse({ status: "ok" })                    : API.post("/api/order-list-enhanced/link-po", data);

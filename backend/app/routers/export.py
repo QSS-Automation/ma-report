@@ -14,12 +14,13 @@ def export_excel(
     entity: str = "QM",
     from_date: date = None,
     to_date: date = None,
+    version: str = "v2",   # P&L sheet layout: "v2" = New P&L (Beta), "v1" = Classic
     db: Session = Depends(get_db)
 ):
     validate_entity(entity)
     fd = from_date or date.today().replace(month=1, day=1)
     td = to_date   or date.today()
-    xlsx_bytes = generate_excel(db, entity, fd, td)
+    xlsx_bytes = generate_excel(db, entity, fd, td, version)
     filename = f"MA_Report_{entity}_{fd.strftime('%Y%m')}_{td.strftime('%Y%m')}.xlsx"
     return Response(
         content=xlsx_bytes,

@@ -97,7 +97,8 @@ export default function PnL({ entity = "QM" }){
   const handleExportExcel = async () => {
     if (!data) { showToast("⚠ Run report first."); return; }
     try {
-        const res = await exportExcel(entity, mp.fromStr, mp.toStr);
+        // The PL sheet follows whichever P&L version is on screen.
+        const res = await exportExcel(entity, mp.fromStr, mp.toStr, pnlVersion);
         const url = window.URL.createObjectURL(new Blob([res.data]));
         const a = document.createElement("a");
         a.href = url;

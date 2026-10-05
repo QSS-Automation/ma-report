@@ -78,235 +78,75 @@ def _spread_amount(amount, start, end, months):
     return result
 
 # ── PL Sheet ───────────────────────────────────────────────────────────────
-def _build_pl(wb, db, entity, fd, td):
+def _build_pl(wb, db, entity, fd, td, version="v2"):
+    """PL sheet = exactly the P&L shown on screen. The rows come from the
+    same service as the P&L tab (Beta: PnlServiceV2, Classic: PnlService),
+    so lines, order, zero lines and figures always match the interface:
+    Description | Total | one column per month. Child lines are indented
+    and outline-grouped under their parent (expanded, like the Beta table
+    opens); use Excel's +/- margin to collapse."""
+    from app.services.pnl_service import PnlService
+    from app.services.pnl_service_v2 import PnlServiceV2
+    beta = version != "v1"
+    res = (PnlServiceV2() if beta else PnlService()).get_pnl(db, fd, td, entity)
+    labels = res.month_labels
+    n = len(labels)
+
     ws = wb.create_sheet("PL")
-    cols = _months_range(fd, td)
-    n = len(cols)
-    D = Decimal
-
-    # FIX: previously summed EVERY P&L account's raw GL amount, including
-    # invoices whose revenue is meant to be DEFERRED and recognised
-    # monthly via MFRS instead (a fact_split row with start_date/end_date
-    # set). Those invoices' full amount was counted here under their own
-    # account AND AGAIN as part of the separate "MFRS {year}" line below —
-    # double-counting the same revenue. Excluded here; represented ONLY
-    # by the MFRS section further down. Matches the fix already applied
-    # in app/services/pnl_service.py.
-    gl = run(db, f"""
-        SELECT acc_no, acc_desc, acc_type, sort_group, section,
-            YEAR(trans_date) yr, MONTH(trans_date) mo,
-            SUM(CASE acc_type
-                WHEN 'SL' THEN home_cr-home_dr WHEN 'SA' THEN home_dr-home_cr
-                WHEN 'CO' THEN home_dr-home_cr WHEN 'OI' THEN home_cr-home_dr
-                WHEN 'EP' THEN home_dr-home_cr WHEN 'TX' THEN home_dr-home_cr
-                ELSE home_dr-home_cr END) net_amount
-        FROM staging_rr_{entity}.RR_gl_lines gl
-        WHERE is_pnl_account=1 AND trans_date BETWEEN '{fd}' AND '{td}'
-          AND NOT EXISTS (
-              SELECT 1 FROM curated_acc_{entity}.fact_split fs
-              WHERE fs.gl_dtl_key = gl.source_key
-                AND fs.is_manual_line = 0
-                AND fs.start_date IS NOT NULL
-                AND fs.end_date IS NOT NULL
-          )
-        GROUP BY acc_no,acc_desc,acc_type,sort_group,section,YEAR(trans_date),MONTH(trans_date)
-        ORDER BY sort_group,acc_no
-    """, {})
-
-    years = sorted({c.year for c in cols})
-    ys = ",".join(str(y) for y in years)
-
-    # Added acc_no + trans_date — needed for per-account breakdown and
-    # invoice-year grouping (see mfrs_rows_for below).
-    mfrs_raw = run(db, f"""
-        SELECT gl_dtl_key, split_index, journal_type, recognised_year, trans_date, acc_no,
-            m01,m02,m03,m04,m05,m06,m07,m08,m09,m10,m11,m12
-        FROM staging_rr_{entity}.RR_mfrs WHERE recognised_year IN ({ys})
-    """, {})
-
-    # Unfiltered account-description lookup, purely for labeling MFRS
-    # children — an account that's ENTIRELY deferred never appears in the
-    # (deliberately filtered) `gl` query above, so its description must
-    # be looked up separately or it'd fall back to showing a raw acc_no.
-    acc_desc_rows = run(db, f"""
-        SELECT DISTINCT acc_no, acc_desc
-        FROM staging_rr_{entity}.RR_gl_lines
-        WHERE acc_no IS NOT NULL
-    """, {})
-    acc_desc_by_no = {r["acc_no"]: r["acc_desc"] for r in acc_desc_rows}
-
-    mk_y = {y: [f"m{c.month:02d}" for c in cols if c.year == y] for y in years}
-
-    # Grouped by the INVOICE's own trans_date year (not recognised_year) —
-    # e.g. a 2025 invoice recognised Nov 2025 - Feb 2026 shows entirely
-    # under "MFRS 2025", all months included, since the invoice itself is
-    # dated 2025. Also broken down per account (acc_no) as `children`,
-    # rendered as a collapsible Excel row group below each year's total.
-    def mfrs_rows_for(jt):
-        by_year_acc = {}
-        for r in mfrs_raw:
-            if r["journal_type"] != jt: continue
-            yr = r["trans_date"].year if r.get("trans_date") else r["recognised_year"]
-            acc_no = r.get("acc_no")
-            key = (yr, acc_no)
-            if key not in by_year_acc:
-                by_year_acc[key] = [D(0)] * n
-            amks = mk_y.get(r["recognised_year"], [])
-            for i, c in enumerate(cols):
-                mk = f"m{c.month:02d}"
-                if mk in amks and r.get(mk) is not None:
-                    by_year_acc[key][i] += D(str(r[mk]))
-
-        by_year = {}
-        for (yr, acc_no), vals in by_year_acc.items():
-            by_year.setdefault(yr, []).append((acc_no, vals))
-
-        out = []
-        for yr in sorted(by_year.keys(), reverse=True):
-            yr_total = [D(0)] * n
-            children = []
-            for acc_no, vals in sorted(by_year[yr], key=lambda x: (x[0] or "")):
-                for i in range(n): yr_total[i] += vals[i]
-                if not any(vals): continue
-                children.append((acc_desc_by_no.get(acc_no, acc_no or "(unspecified account)"), vals))
-            if any(yr_total):
-                out.append({"year": yr, "total": yr_total, "children": children})
-        return out
-
-    ms_rows = mfrs_rows_for("SALES")
-    mc_rows = mfrs_rows_for("PURCHASE")
-
-    DATA_COL = 3
-    YTD_COL  = DATA_COL + n
-    CUR_COL  = YTD_COL + 1
+    DESC_COL, TOTAL_COL, DATA_COL = 1, 2, 3
+    LAST_COL = DATA_COL + n - 1
 
     _cell(ws, 1, 1, f"Quandatics {entity}", bold=True, size=12)
-    _cell(ws, 2, 1, "Statement of Profit or Loss", bold=True, size=11)
-    _cell(ws, 3, 1, f"For the period ended {td.strftime('%d %B %Y')}", bold=True, size=10)
+    _cell(ws, 2, 1, "Statement of Profit or Loss" + (" (New P&L)" if beta else ""), bold=True, size=11)
+    _cell(ws, 3, 1, f"For the period {fd.strftime('%d %B %Y')} to {td.strftime('%d %B %Y')}", bold=True, size=10)
 
-    MN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-    for i, mo in enumerate(cols):
-        _cell(ws, 5, DATA_COL + i, f"{MN[mo.month-1]}-{str(mo.year)[2:]}",
-              bold=True, align="center", fill=GREY_HDR)
-    _cell(ws, 5, YTD_COL, "YTD", bold=True, align="center", fill=GREY_HDR)
-    _cell(ws, 5, CUR_COL, f"As of {cols[0].strftime('%m.%Y')}", bold=True, align="center", fill=GREY_HDR)
-    for i in range(n + 2):
-        _cell(ws, 6, DATA_COL + i, "RM", bold=True, align="center",
-              fill=GREY_HDR, color=DARK_GREY, size=9)
+    _cell(ws, 5, DESC_COL, "Description", bold=True, fill=GREY_HDR)
+    _cell(ws, 5, TOTAL_COL, "Total", bold=True, align="right", fill=GREY_HDR)
+    for i, lab in enumerate(labels):
+        _cell(ws, 5, DATA_COL + i, lab, bold=True, align="right", fill=GREY_HDR)
+    for col in range(TOTAL_COL, LAST_COL + 1):
+        _cell(ws, 6, col, "RM", bold=True, align="right", fill=GREY_HDR, color=DARK_GREY, size=9)
+    _border_bottom(ws, 6, LAST_COL)
 
-    SEC = {
-        1: "Sales", 2: "Return Inwards", 3: "Cost of Sales",
-        4: "Other Income", 5: "Operating Expenses", 6: "Taxation"
-    }
-    from collections import defaultdict
-    data = defaultdict(lambda: defaultdict(D))
-    meta = {}
-    for r in gl:
-        key = (r["sort_group"], r["acc_no"])
-        data[key][(r["yr"], r["mo"])] += D(str(r["net_amount"] or 0))
-        meta[key] = {"label": r["acc_desc"], "sort_group": r["sort_group"]}
-
-    row = 8
-    st = {}
-    # Enable row outlining/grouping (the Excel "+ / -" collapsible groups)
-    # so each MFRS year's per-account breakdown can expand/collapse,
-    # while the year's own total row stays always visible above them.
     ws.sheet_properties.outlinePr.summaryBelow = False
     ws.sheet_properties.outlinePr.applyStyles = True
 
-    for sg in range(1, 7):
-        sec_label = SEC.get(sg, "")
-        sec_keys = sorted([k for k in meta if k[0] == sg])
-        if not sec_keys and sg not in (1, 3):
-            continue
-
-        sec_totals = [D(0)] * n
-        dets = []  # list of (label, m_vals, is_mfrs, children)
-
-        for key in sec_keys:
-            m_vals = [data[key].get((mo.year, mo.month), D(0)) for mo in cols]
-            for i, v in enumerate(m_vals): sec_totals[i] += v
-            dets.append((meta[key]["label"], m_vals, False, None))
-
-        mfrs_group = ms_rows if sg == 1 else (mc_rows if sg == 3 else [])
-        mfrs_label_prefix = "MFRS \u2014 Sales" if sg == 1 else "MFRS \u2014 Purchases"
-        for grp in mfrs_group:
-            for i, v in enumerate(grp["total"]): sec_totals[i] += v
-            dets.append((f"{mfrs_label_prefix} {grp['year']}", grp["total"], True, grp["children"]))
-
-        _cell(ws, row, 1, sec_label, bold=True, fill=GREY_HDR)
-        _border_bottom(ws, row, CUR_COL, style="medium")
+    row = 7
+    def put(r, depth):
+        nonlocal row
+        kids = r.children or []
+        is_sum = r.row_type in ("summary", "net_sales")
+        is_mfrs = r.row_type == "mfrs"
+        is_head = bool(kids) or r.row_type == "subtotal"
+        fill = SUBTOTAL if is_sum else MFRS_FILL if is_mfrs else GREY_HDR if is_head else None
+        bold = is_sum or is_head or is_mfrs
+        size = 11 if is_sum else 10
+        c = _cell(ws, row, DESC_COL, r.label, bold=bold, size=size, fill=fill)
+        c.alignment = Alignment(horizontal="left", vertical="center", indent=depth * 2)
+        _cell(ws, row, TOTAL_COL, float(r.total or 0), bold=bold, size=size, align="right",
+              num_format=FMT_NUM, fill=fill)
+        for i, v in enumerate(r.months):
+            _cell(ws, row, DATA_COL + i, float(v or 0), bold=bold, size=size, align="right",
+                  num_format=FMT_NUM, fill=fill)
+        if is_sum:
+            _border_bottom(ws, row, LAST_COL, style="double")
+        if depth:
+            ws.row_dimensions[row].outlineLevel = min(depth, 7)
         row += 1
+        for k in kids:
+            put(k, depth + 1)
 
-        for label, m_vals, is_mfrs, children in dets:
-            fill = MFRS_FILL if is_mfrs else None
-            _cell(ws, row, 1, label, size=10, bold=is_mfrs, fill=fill)
-            ytd = sum(m_vals, D(0))
-            for i, v in enumerate(m_vals):
-                _cell(ws, row, DATA_COL + i, float(v), align="right", num_format=FMT_NUM, size=10, fill=fill)
-            _cell(ws, row, YTD_COL, float(ytd), align="right", num_format=FMT_NUM, size=10, fill=fill)
-            _cell(ws, row, CUR_COL, float(m_vals[0]) if m_vals else 0, align="right", num_format=FMT_NUM, size=10, fill=fill)
-            row += 1
+    for r in res.rows:
+        # Classic returns a flat list: section header (subtotal) rows, then
+        # their account / MFRS rows — those sit one level in, as on screen.
+        depth = 1 if (not beta and r.row_type in ("detail", "mfrs")) else 0
+        put(r, depth)
 
-            if is_mfrs and children:
-                for child_label, child_vals in children:
-                    child_ytd = sum(child_vals, D(0))
-                    _cell(ws, row, 1, f"    {child_label}", size=9, color=DARK_GREY, italic=True)
-                    for i, v in enumerate(child_vals):
-                        _cell(ws, row, DATA_COL + i, float(v), align="right", num_format=FMT_NUM, size=9, color=DARK_GREY)
-                    _cell(ws, row, YTD_COL, float(child_ytd), align="right", num_format=FMT_NUM, size=9, color=DARK_GREY)
-                    _cell(ws, row, CUR_COL, float(child_vals[0]) if child_vals else 0, align="right", num_format=FMT_NUM, size=9, color=DARK_GREY)
-                    # Collapsible under the MFRS year row above it —
-                    # collapsed by default (hidden=True); user clicks the
-                    # "+" in Excel's row-group margin to reveal.
-                    ws.row_dimensions[row].outlineLevel = 1
-                    ws.row_dimensions[row].hidden = True
-                    row += 1
-
-        ytd_sec = sum(sec_totals, D(0))
-        _cell(ws, row, 1, f"Total {sec_label}", bold=True, fill=SUBTOTAL)
-        for i, v in enumerate(sec_totals):
-            _cell(ws, row, DATA_COL + i, float(v), bold=True, align="right", num_format=FMT_NUM, fill=SUBTOTAL)
-        _cell(ws, row, YTD_COL, float(ytd_sec), bold=True, align="right", num_format=FMT_NUM, fill=SUBTOTAL)
-        _cell(ws, row, CUR_COL, float(sec_totals[0]) if sec_totals else 0, bold=True, align="right", num_format=FMT_NUM, fill=SUBTOTAL)
-        _border_bottom(ws, row, CUR_COL, style="medium")
-        st[sg] = sec_totals
-        row += 2
-
-        if sg == 3:
-            s1 = st.get(1, [D(0)] * n)
-            s2 = st.get(2, [D(0)] * n)
-            s3 = st.get(3, [D(0)] * n)
-            gp = [s1[i] - s2[i] - s3[i] for i in range(n)]
-            _cell(ws, row, 1, "Gross Profit / (Loss)", bold=True, size=11)
-            for i, v in enumerate(gp):
-                _cell(ws, row, DATA_COL + i, float(v), bold=True, align="right", num_format=FMT_NUM, size=11)
-            _cell(ws, row, YTD_COL, float(sum(gp, D(0))), bold=True, align="right", num_format=FMT_NUM, size=11)
-            _cell(ws, row, CUR_COL, float(gp[0]) if gp else 0, bold=True, align="right", num_format=FMT_NUM, size=11)
-            _border_bottom(ws, row, CUR_COL, style="double")
-            row += 2
-
-    s1 = st.get(1, [D(0)] * n); s2 = st.get(2, [D(0)] * n)
-    s3 = st.get(3, [D(0)] * n); s4 = st.get(4, [D(0)] * n)
-    s5 = st.get(5, [D(0)] * n); s6 = st.get(6, [D(0)] * n)
-    gp  = [s1[i] - s2[i] - s3[i] for i in range(n)]
-    pbt = [gp[i] + s4[i] - s5[i] for i in range(n)]
-    pat = [pbt[i] - s6[i] for i in range(n)]
-
-    for label, vals in [("Net Profit Before Tax", pbt), ("Net Profit After Tax", pat)]:
-        _cell(ws, row, 1, label, bold=True, size=11)
-        for i, v in enumerate(vals):
-            _cell(ws, row, DATA_COL + i, float(v), bold=True, align="right", num_format=FMT_NUM, size=11)
-        _cell(ws, row, YTD_COL, float(sum(vals, D(0))), bold=True, align="right", num_format=FMT_NUM, size=11)
-        _cell(ws, row, CUR_COL, float(vals[0]) if vals else 0, bold=True, align="right", num_format=FMT_NUM, size=11)
-        _border_bottom(ws, row, CUR_COL, style="double")
-        row += 2
-
-    ws.column_dimensions['A'].width = 38
-    ws.column_dimensions['B'].width = 12
-    for i in range(n + 2):
-        ws.column_dimensions[get_column_letter(DATA_COL + i)].width = 16
-    ws.freeze_panes = "C8"
+    ws.column_dimensions["A"].width = 46
+    ws.column_dimensions["B"].width = 16
+    for i in range(n):
+        ws.column_dimensions[get_column_letter(DATA_COL + i)].width = 15
+    ws.freeze_panes = "C7"
     ws.sheet_view.showGridLines = False
 
 # ── BS Sheet ───────────────────────────────────────────────────────────────
@@ -614,10 +454,10 @@ def _build_adj(wb, db, entity, fd, td, jt, sheet_name):
     ws.sheet_view.showGridLines = False
 
 # ── Main export function ────────────────────────────────────────────────────
-def generate_excel(db: Session, entity: str, fd: date, td: date) -> bytes:
+def generate_excel(db: Session, entity: str, fd: date, td: date, version: str = "v2") -> bytes:
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    _build_pl(wb, db, entity, fd, td)
+    _build_pl(wb, db, entity, fd, td, version)
     _build_bs(wb, db, entity, fd, td)
     _build_adj(wb, db, entity, fd, td, "SALES",    "Sales")
     _build_adj(wb, db, entity, fd, td, "PURCHASE", "Purchases")
