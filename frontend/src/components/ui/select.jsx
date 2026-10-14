@@ -45,7 +45,10 @@ const SelectContent = React.forwardRef(({ className, children, position = "poppe
       position={position}
       className={cn(
         "relative z-[100] min-w-[8rem] overflow-hidden rounded-md border border-border bg-card text-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-        position === "popper" && "translate-y-1",
+        // Never taller than the space left on screen (or 20rem): a long list
+        // (e.g. Lock period's 60 months) then scrolls inside the dropdown
+        // instead of running off the bottom of a small screen unreachable.
+        position === "popper" && "translate-y-1 max-h-[min(20rem,var(--radix-select-content-available-height))]",
         className
       )}
       {...props}
